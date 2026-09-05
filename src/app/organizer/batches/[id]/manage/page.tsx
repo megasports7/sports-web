@@ -2,10 +2,19 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
+import { StatusBadge } from '@/lib/ui/StatusBadge';
+import { BracketList, BracketRow } from '@/lib/ui/Bracket';
 import type { Batch, BatchPlayer, OrganizerMatch, Referee } from '@/lib/types';
 
 type Panel = { matchId: string; type: 'record' | 'advance' | 'replace' };
 type ActionMessage = { matchId: string; text: string; error?: boolean };
+
+const DOT_COLOR: Record<string, string> = {
+  scheduled: 'bg-muted',
+  in_progress: 'bg-accent-blue',
+  completed: 'bg-accent-green',
+};
 
 export default function BatchManagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -188,26 +197,26 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     return null;
   }
 
-  if (loading) return <p className="text-gray-500">Loading batch…</p>;
-  if (error) return <p className="text-red-600">{error}</p>;
-  if (!batch) return <p className="text-red-600">Batch not found.</p>;
+  if (loading) return <p className="text-muted">Loading batch…</p>;
+  if (error) return <p className="text-corner-red">{error}</p>;
+  if (!batch) return <p className="text-corner-red">Batch not found.</p>;
 
   const rounds = Array.from(new Set(matches.map((m) => m.round_number ?? 0))).sort((a, b) => a - b);
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-bold">{batch.batch_name}</h1>
-        {batch.category && <p className="text-sm text-gray-500">{batch.category}</p>}
+        <h1 className="text-lg font-bold text-ink">{batch.batch_name}</h1>
+        {batch.category && <p className="text-sm text-muted">{batch.category}</p>}
       </div>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-600">Referee</h2>
+      <Card>
+        <h2 className="mb-2 text-sm font-semibold text-muted">Referee</h2>
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={selectedRefereeId}
             onChange={(e) => setSelectedRefereeId(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            className="rounded-md border border-line px-3 py-2 text-sm"
           >
             <option value="">Unassigned</option>
             {referees.map((r) => (
@@ -219,27 +228,27 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           <button
             onClick={handleSaveReferee}
             disabled={savingReferee}
-            className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
           >
             {savingReferee ? 'Saving…' : 'Save'}
           </button>
         </div>
-        {refereeMessage && <p className="mt-2 text-sm text-gray-600">{refereeMessage}</p>}
-      </section>
+        {refereeMessage && <p className="mt-2 text-sm text-muted">{refereeMessage}</p>}
+      </Card>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-gray-600">Matches</h2>
+        <h2 className="mb-2 text-sm font-semibold text-muted">Matches</h2>
         {matches.length === 0 ? (
-          <p className="text-sm text-gray-500">No matches yet.</p>
+          <p className="text-sm text-muted">No matches yet.</p>
         ) : (
           <div className="flex flex-col gap-5">
             {rounds.map((round) => (
-              <div key={round}>
-                <h3 className="mb-2 text-xs font-semibold uppercase text-gray-400">Round {round}</h3>
-                <div className="flex flex-col gap-3">
+              <Card key={round}>
+                <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Round {round}</h3>
+                <BracketList>
                   {matches
                     .filter((m) => (m.round_number ?? 0) === round)
-                    .map((match) => {
+                    .map((match, i) => {
                       const canStart = match.status === 'scheduled' && !!match.player1_id && !!match.player2_id;
                       const canRecord = match.status === 'scheduled' || match.status === 'in_progress';
                       const canReopen = match.status === 'completed';
@@ -252,73 +261,58 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                       const isPanelHere = panel?.matchId === match.match_id;
 
                       return (
-                        <div key={match.match_id} className="rounded-lg border border-gray-200 bg-white p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="font-medium">
-                                {match.player1_name ?? 'TBD'} vs {match.player2_name ?? 'TBD'}
-                              </div>
-                              {w && <div className="text-sm text-gray-600">Winner: {w}</div>}
+                        <div key={match.match_id} className="flex flex-col gap-2">
+                          <BracketRow number={i + 1} dotColor={DOT_COLOR[match.status ?? ''] ?? 'bg-muted'}>
+                            <div className="flex flex-1 items-center justify-between gap-3 text-sm">
+                              <span className="font-medium text-ink">
+                                {match.player1_name ?? 'TBD'}
+                                {match.player1_score !== undefined && match.player2_score !== undefined && (
+                                  <span className="ml-2 font-mono text-xs font-bold text-ink">
+                                    {match.player1_score}–{match.player2_score}
+                                  </span>
+                                )}
+                                <span className="mx-2 text-xs text-muted">vs</span>
+                                {match.player2_name ?? 'TBD'}
+                              </span>
+                              <StatusBadge status={match.status ?? 'scheduled'} />
                             </div>
-                            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                              {match.status}
-                            </span>
-                          </div>
+                          </BracketRow>
+                          {w && <div className="pl-7 text-xs text-muted">Winner: {w}</div>}
 
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-2 pl-7">
                             {canStart && (
-                              <button
-                                onClick={() => handleStart(match)}
-                                disabled={busy}
-                                className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-                              >
+                              <button onClick={() => handleStart(match)} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50">
                                 Start
                               </button>
                             )}
                             {canRecord && (
                               <button
-                                onClick={() =>
-                                  isPanelHere && panel?.type === 'record'
-                                    ? closePanel()
-                                    : openPanel(match.match_id, 'record')
-                                }
+                                onClick={() => (isPanelHere && panel?.type === 'record' ? closePanel() : openPanel(match.match_id, 'record'))}
                                 disabled={busy}
-                                className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                                className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
                               >
                                 Record result
                               </button>
                             )}
                             {canReopen && (
-                              <button
-                                onClick={() => handleReopen(match)}
-                                disabled={busy}
-                                className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-                              >
+                              <button onClick={() => handleReopen(match)} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50">
                                 Reopen
                               </button>
                             )}
                             {canAdvance && (
                               <button
-                                onClick={() =>
-                                  isPanelHere && panel?.type === 'advance'
-                                    ? closePanel()
-                                    : openPanel(match.match_id, 'advance')
-                                }
+                                onClick={() => (isPanelHere && panel?.type === 'advance' ? closePanel() : openPanel(match.match_id, 'advance'))}
                                 disabled={busy}
-                                className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                                className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
                               >
                                 Force advance
                               </button>
                             )}
                             {canReplace && (
                               <button
-                                onClick={() =>
-                                  isPanelHere && panel?.type === 'replace'
-                                    ? closePanel()
-                                    : openPanel(match.match_id, 'replace')
-                                }
+                                onClick={() => (isPanelHere && panel?.type === 'replace' ? closePanel() : openPanel(match.match_id, 'replace'))}
                                 disabled={busy}
-                                className="rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                                className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
                               >
                                 Replace participant
                               </button>
@@ -326,8 +320,8 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           </div>
 
                           {isPanelHere && panel?.type === 'record' && (
-                            <div className="mt-3 flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
-                              <div className="flex flex-col gap-1 text-sm">
+                            <div className="ml-7 flex flex-col gap-2 rounded-md border border-line bg-bg p-3">
+                              <div className="flex flex-col gap-1 text-sm text-ink">
                                 <label className="flex items-center gap-2">
                                   <input
                                     type="radio"
@@ -353,25 +347,21 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                                   placeholder="Player 1 score"
                                   value={recordScore1}
                                   onChange={(e) => setRecordScore1(e.target.value)}
-                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                  className="w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
                                 />
                                 <input
                                   type="number"
                                   placeholder="Player 2 score"
                                   value={recordScore2}
                                   onChange={(e) => setRecordScore2(e.target.value)}
-                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                  className="w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
                                 />
                               </div>
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => submitRecord(match)}
-                                  disabled={busy}
-                                  className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                                >
+                                <button onClick={() => submitRecord(match)} disabled={busy} className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50">
                                   Submit
                                 </button>
-                                <button onClick={closePanel} className="rounded-lg border px-3 py-2 text-sm font-medium">
+                                <button onClick={closePanel} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
                                   Cancel
                                 </button>
                               </div>
@@ -379,8 +369,8 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           )}
 
                           {isPanelHere && panel?.type === 'advance' && (
-                            <div className="mt-3 flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
-                              <div className="flex flex-col gap-1 text-sm">
+                            <div className="ml-7 flex flex-col gap-2 rounded-md border border-line bg-bg p-3">
+                              <div className="flex flex-col gap-1 text-sm text-ink">
                                 <label className="flex items-center gap-2">
                                   <input
                                     type="radio"
@@ -401,14 +391,10 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                                 </label>
                               </div>
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => submitAdvance(match)}
-                                  disabled={busy}
-                                  className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                                >
+                                <button onClick={() => submitAdvance(match)} disabled={busy} className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50">
                                   Confirm
                                 </button>
-                                <button onClick={closePanel} className="rounded-lg border px-3 py-2 text-sm font-medium">
+                                <button onClick={closePanel} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
                                   Cancel
                                 </button>
                               </div>
@@ -416,8 +402,8 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           )}
 
                           {isPanelHere && panel?.type === 'replace' && (
-                            <div className="mt-3 flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
-                              <div className="flex flex-col gap-1 text-sm">
+                            <div className="ml-7 flex flex-col gap-2 rounded-md border border-line bg-bg p-3">
+                              <div className="flex flex-col gap-1 text-sm text-ink">
                                 <label className="flex items-center gap-2">
                                   <input
                                     type="radio"
@@ -440,7 +426,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                               <select
                                 value={replaceNewId}
                                 onChange={(e) => setReplaceNewId(e.target.value)}
-                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                className="rounded-md border border-line px-3 py-2 text-sm"
                               >
                                 <option value="">Select replacement</option>
                                 {eligibleReplacements.map((p) => (
@@ -450,14 +436,10 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                                 ))}
                               </select>
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => submitReplace(match)}
-                                  disabled={busy}
-                                  className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                                >
+                                <button onClick={() => submitReplace(match)} disabled={busy} className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50">
                                   Confirm
                                 </button>
-                                <button onClick={closePanel} className="rounded-lg border px-3 py-2 text-sm font-medium">
+                                <button onClick={closePanel} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
                                   Cancel
                                 </button>
                               </div>
@@ -465,15 +447,13 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           )}
 
                           {actionMessage?.matchId === match.match_id && (
-                            <p className={`mt-2 text-sm ${actionMessage.error ? 'text-red-600' : 'text-gray-600'}`}>
-                              {actionMessage.text}
-                            </p>
+                            <p className={`ml-7 text-sm ${actionMessage.error ? 'text-corner-red' : 'text-muted'}`}>{actionMessage.text}</p>
                           )}
                         </div>
                       );
                     })}
-                </div>
-              </div>
+                </BracketList>
+              </Card>
             ))}
           </div>
         )}
