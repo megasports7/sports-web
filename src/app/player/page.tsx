@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { playerApi } from '@/lib/api/player.api';
+import { Card } from '@/lib/ui/Card';
+import { StatTile } from '@/lib/ui/StatTile';
 import type { PlayerDashboardData } from '@/lib/types';
 
 export default function PlayerDashboardPage() {
@@ -20,57 +22,60 @@ export default function PlayerDashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-gray-500">Loading dashboard…</p>;
-  if (error) return <p className="text-red-600">{error}</p>;
+  if (loading) return <p className="text-muted">Loading dashboard…</p>;
+  if (error) return <p className="text-corner-red">{error}</p>;
   if (!data) return null;
 
   const { player, stats, upcoming_matches } = data;
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h1 className="text-lg font-bold">{player.player_name}</h1>
-        <p className="text-sm text-gray-500">
+      <Card accent="blue">
+        <h1 className="text-lg font-bold text-ink">{player.player_name}</h1>
+        <p className="text-sm text-muted">
           {player.id_number || player.nsrd_id || (player.player_id ? `#${player.player_id}` : player.id.slice(0, 8))}
           {player.sport ? ` · ${player.sport}` : ''}
         </p>
-      </section>
+      </Card>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-gray-600">Your stats</h2>
+        <h2 className="mb-2 text-sm font-semibold text-muted">Your stats</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          {[
-            { label: 'Events', value: stats.events_count },
-            { label: 'Gold', value: stats.certificates.gold },
-            { label: 'Silver', value: stats.certificates.silver },
-            { label: 'Bronze', value: stats.certificates.bronze },
-            { label: 'Total certs', value: stats.total_certs },
-          ].map((s) => (
-            <div key={s.label} className="rounded-lg border border-gray-200 bg-white p-3 text-center">
-              <div className="text-xl font-bold">{s.value}</div>
-              <div className="text-xs text-gray-500">{s.label}</div>
-            </div>
-          ))}
+          <StatTile value={stats.events_count} label="Events" accent="blue" />
+          <StatTile value={stats.certificates.gold} label="Gold" accent="pending" />
+          <StatTile value={stats.certificates.silver} label="Silver" accent="none" />
+          <StatTile value={stats.certificates.bronze} label="Bronze" accent="none" />
+          <StatTile value={stats.total_certs} label="Total certs" accent="green" />
         </div>
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-gray-600">Upcoming matches</h2>
+        <h2 className="mb-2 text-sm font-semibold text-muted">Upcoming matches</h2>
         {upcoming_matches.length === 0 ? (
-          <p className="text-sm text-gray-500">No upcoming matches.</p>
+          <p className="text-sm text-muted">No upcoming matches.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {upcoming_matches.map((m) => (
-              <li key={m.match_id} className="rounded-lg border border-gray-200 bg-white p-3 text-sm">
-                <div className="font-medium">{m.event_name || 'Event'}</div>
-                <div className="text-gray-500">vs {m.opponent_name || 'TBD'}</div>
-              </li>
+              <Card as="li" key={m.match_id}>
+                <div className="mb-2 text-xs text-muted">{m.event_name || 'Event'}</div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 font-semibold text-ink">
+                    <span className="h-[9px] w-[9px] rounded-full bg-corner-red" />
+                    You
+                  </span>
+                  <span className="text-xs font-semibold text-muted">VS</span>
+                  <span className="flex items-center gap-2 font-medium text-ink">
+                    {m.opponent_name || 'TBD'}
+                    <span className="h-[9px] w-[9px] rounded-full bg-accent-blue" />
+                  </span>
+                </div>
+              </Card>
             ))}
           </ul>
         )}
       </section>
 
-      <Link href="/player/events" className="text-sm font-medium underline">
+      <Link href="/player/events" className="text-sm font-medium text-accent-blue underline">
         Browse events →
       </Link>
     </div>
