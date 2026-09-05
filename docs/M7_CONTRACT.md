@@ -22,6 +22,10 @@ Decided in `docs/MILESTONES.md` before this contract: Next.js on Vercel, `@supab
 
 These are deliberate YAGNI cuts for a <1,000-user authenticated app on a tight timeline, not omissions to revisit reflexively — only reopen one if a real, observed need forces it.
 
+## Execution-agent architecture (hard constraint — max 3 agents, fixed roles)
+
+Same discipline `M5_CONTRACT.md` ran on the mobile migration, carried over unchanged: **brain** (Sonnet — decisions, contract/report writing, gate judging), **coding** (Sonnet — implementation), **reading** (Haiku — read-only verification, independently re-derives claims rather than trusting a self-report). No 4th role, no unbounded parallelism, at most 3 agents active at any point across the whole phased sequence below. The same reason it mattered for M5 applies here: the thing writing a check should not also be the thing that gets to grade it.
+
 ## Architecture
 
 **One backend, one middleware file, plain client-side calls everywhere else.**
@@ -66,6 +70,26 @@ Following the same "a check must be proven able to fail before its PASS means an
 3. Hit `/organizer/*` with a legitimate organizer-role session → confirm access.
 
 Only after all three are observed (not assumed) is `middleware.ts` trusted.
+
+## Phased sequence
+
+### Phase 0 — Scaffold, deploy pipeline, environment
+`coding` scaffolds the Next.js App Router project in `sports-web/`, installs `@supabase/ssr` + `@supabase/supabase-js`, wires `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` against the same project mobile uses, and gets a minimal page deployed to Vercel — proving the whole pipeline (build → deploy → reachable URL) works before any real feature is built on top of it. `reading` independently confirms the deployed URL actually loads and that no privileged key appears in the deployed page source (a cheap early version of Phase 4's full scan).
+
+### Phase 1 — Auth foundation, gated before anything is built behind it
+`coding` builds `middleware.ts` (the documented `@supabase/ssr` session-refresh + redirect pattern), the `/login`/`/signup` pages, and the client-side auth context mirroring `AuthContext.tsx`. **Nothing in Phase 2/3 starts until the auth gate's 3-step definition of done (above) is independently proven by `reading`** — no session → redirect; wrong role → redirect; correct role → access. This is the same "prove a check can fail before trusting its PASS" discipline as every M5 check, applied to the one piece of real complexity this app has.
+
+### Phase 2 — Player role port
+`coding` ports `player.api.ts` (direct close port, per the API-layer section above) and builds the `app/(player)/...` route group: dashboard, events browse + register, matches, certificates, profile (real `File`/`Blob` photo upload). `reading` independently verifies each ported function's behavior against the mobile original — same RPC calls, same envelope shape, same edge cases (e.g. the duplicate-registration behavior) — not just "the page renders."
+
+### Phase 3 — Organizer role port
+`coding` ports `organizer.api.ts` and builds the `app/(organizer)/...` route group: dashboard, create event (banner upload), manage events, manage registrations, create batch, batch certificates, attendance lists, referee assignment. **One open question, flagged here rather than silently decided:** organizer's mobile attendance-marking flows (Rapid Mode, Scan List) are QR/camera-driven, and QR is explicitly deferred (per Non-goals). What replaces QR-based attendance marking in the web version for v1 — a manual checklist/search-and-tap UI, or is attendance marking itself deferred alongside QR? Not decided in this contract; resolve explicitly before Phase 3 starts, don't let `coding` default to something unstated.
+
+### Phase 4 — HARD GATE: bundle secret scan
+Same method M5 Phase 7 already proved out: `reading` scans the deployed web build's actual output for the mandatory positive control (the anon/publishable key, expected and public-by-design) before trusting any absence claim, then confirms zero occurrences of `SUPABASE_SERVICE_ROLE_KEY` or any other privileged secret anywhere in the client-shipped bundle. `brain` judges the gate — a passing scan that never proved it could find something is not evidence of anything.
+
+### Phase 5 — Final deployment verification
+`coding` deploys the real build to Vercel; `reading` re-runs the auth-gate definition of done (Phase 1) and a full login → browse → register (player) / login → create event → manage registration (organizer) smoke pass against the actual deployed production URL, not localhost. `brain` closes M7 v1 only once this passes live, independently confirmed — same bar as every M5 phase closed on.
 
 ## Extending to referee/associate/admin later
 
