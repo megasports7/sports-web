@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { playerApi } from '@/lib/api/player.api';
+import { Card } from '@/lib/ui/Card';
 import type { Event } from '@/lib/types';
 
 export default function PlayerEventsPage() {
@@ -20,31 +21,29 @@ export default function PlayerEventsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-gray-500">Loading events…</p>;
-  if (error) return <p className="text-red-600">{error}</p>;
+  if (loading) return <p className="text-muted">Loading events…</p>;
+  if (error) return <p className="text-corner-red">{error}</p>;
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-bold">Events</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Events</h1>
       {events.length === 0 ? (
-        <p className="text-sm text-gray-500">No events available. Check back later.</p>
+        <p className="text-sm text-muted">No events available. Check back later.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {events.map((e) => {
             const registered = e.registration_status === 'approved' || e.registration_status === 'pending';
             return (
-              <li key={e.event_id} className="rounded-lg border border-gray-200 bg-white p-4">
+              <Card as="li" key={e.event_id} accent={e.registration_status === 'approved' ? 'green' : e.registration_status === 'pending' ? 'pending' : 'none'}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-semibold">{e.event_name}</div>
-                    {(e.venue || e.location) && (
-                      <div className="text-sm text-gray-500">{e.venue || e.location}</div>
-                    )}
+                    <div className="font-semibold text-ink">{e.event_name}</div>
+                    {(e.venue || e.location) && <div className="text-sm text-muted">{e.venue || e.location}</div>}
                     {e.event_date && (
-                      <div className="text-xs text-gray-400">{new Date(e.event_date).toLocaleDateString()}</div>
+                      <div className="text-xs text-muted">{new Date(e.event_date).toLocaleDateString()}</div>
                     )}
                     {e.event_category && (
-                      <div className="mt-1 text-xs font-medium text-gray-600">
+                      <div className="mt-1 text-xs font-medium text-muted">
                         {e.event_category}
                         {e.age_category ? ` · ${e.age_category}` : ''}
                         {e.weight_category ? ` · ${e.weight_category}` : ''}
@@ -53,10 +52,8 @@ export default function PlayerEventsPage() {
                   </div>
                   {registered ? (
                     <span
-                      className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-                        e.registration_status === 'approved'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-amber-100 text-amber-700'
+                      className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-surface ${
+                        e.registration_status === 'approved' ? 'bg-accent-green' : 'bg-status-pending'
                       }`}
                     >
                       {e.registration_status === 'approved' ? 'Registered' : 'Pending'}
@@ -64,13 +61,13 @@ export default function PlayerEventsPage() {
                   ) : (
                     <Link
                       href={`/player/events/${e.event_id}/register`}
-                      className="shrink-0 rounded-lg bg-black px-3 py-1.5 text-xs font-semibold text-white"
+                      className="shrink-0 rounded-md bg-accent-blue px-3 py-1.5 text-xs font-semibold text-surface"
                     >
                       Register
                     </Link>
                   )}
                 </div>
-              </li>
+              </Card>
             );
           })}
         </ul>

@@ -4,6 +4,7 @@ import { useEffect, useState, use as usePromise } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { playerApi } from '@/lib/api/player.api';
+import { Card } from '@/lib/ui/Card';
 import {
   TANDING_AGE_CATEGORIES,
   SENI_AGE_CATEGORIES,
@@ -89,13 +90,15 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
 
   return (
     <div className="mx-auto max-w-md">
-      <h1 className="mb-1 text-lg font-bold">{event?.event_name || 'Register'}</h1>
-      <p className="mb-4 text-sm text-gray-500">
-        Venue: {event?.venue || event?.location || 'TBD'} · Organizer: {event?.organizer_name || 'TBD'}
-      </p>
+      <Card accent="blue" className="mb-4">
+        <h1 className="text-lg font-bold text-ink">{event?.event_name || 'Register'}</h1>
+        <p className="text-sm text-muted">
+          Venue: {event?.venue || event?.location || 'TBD'} · Organizer: {event?.organizer_name || 'TBD'}
+        </p>
+      </Card>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Event category *
           <select
             value={eventCategory}
@@ -106,7 +109,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
               setWeightText('');
               setSeniCategory('');
             }}
-            className="rounded-lg border border-gray-300 px-3 py-2"
+            className="rounded-md border border-line px-3 py-2"
           >
             <option value="">Select event category</option>
             <option value="TANDING">TANDING</option>
@@ -115,7 +118,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </label>
 
         {eventCategory && (
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm text-ink">
             Age category *
             <select
               value={ageCategory}
@@ -124,7 +127,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
                 setWeightCategory('');
                 setWeightText('');
               }}
-              className="rounded-lg border border-gray-300 px-3 py-2"
+              className="rounded-md border border-line px-3 py-2"
             >
               <option value="">Select age category</option>
               {ageOptions.map((c) => (
@@ -133,32 +136,32 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
                 </option>
               ))}
             </select>
-            <span className="text-xs italic text-gray-400">
+            <span className="text-xs italic text-muted">
               You may register once per age group (e.g., one Senior, one Junior…)
             </span>
           </label>
         )}
 
         {eventCategory === 'TANDING' && ageCategory && SIMPLE_WEIGHT_AGES.includes(ageCategory) && (
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm text-ink">
             Weight (kg) *
             <input
               type="number"
               value={weightText}
               onChange={(e) => setWeightText(e.target.value)}
               placeholder="Enter weight in kg"
-              className="rounded-lg border border-gray-300 px-3 py-2"
+              className="rounded-md border border-line px-3 py-2"
             />
           </label>
         )}
 
         {eventCategory === 'TANDING' && ageCategory && !SIMPLE_WEIGHT_AGES.includes(ageCategory) && (
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm text-ink">
             Weight category *
             <select
               value={weightCategory}
               onChange={(e) => setWeightCategory(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2"
+              className="rounded-md border border-line px-3 py-2"
             >
               <option value="">Select weight category</option>
               {(WEIGHT_CATEGORIES_BY_AGE[ageCategory] ?? []).map((c) => (
@@ -171,12 +174,12 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         )}
 
         {eventCategory === 'SENI' && ageCategory && (
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm text-ink">
             Seni category *
             <select
               value={seniCategory}
               onChange={(e) => setSeniCategory(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2"
+              className="rounded-md border border-line px-3 py-2"
             >
               <option value="">Select seni category</option>
               {SENI_CATEGORIES.map((c) => (
@@ -188,20 +191,20 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
           </label>
         )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-corner-red">{error}</p>}
 
         <div className="flex gap-2">
           <button
             type="submit"
             disabled={submitting}
-            className="flex-[2] rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="flex-[2] rounded-md bg-accent-blue px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
           >
             {submitting ? 'Submitting…' : 'Submit'}
           </button>
           <button
             type="button"
             onClick={() => router.back()}
-            className="flex-1 rounded-lg border px-3 py-2 text-sm font-medium"
+            className="flex-1 rounded-md border border-line px-3 py-2 text-sm font-medium text-ink"
           >
             Back
           </button>
