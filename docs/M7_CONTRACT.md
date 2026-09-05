@@ -15,10 +15,10 @@ Decided in `docs/MILESTONES.md` before this contract: Next.js on Vercel, `@supab
 ## Non-goals (explicitly out of scope for v1)
 
 - No Server Components or Server Actions for data fetching/mutation.
-- No custom backend or Next.js API routes layer beyond Supabase itself.
+- No custom backend or Next.js API routes layer. If a genuine server-side secret is ever needed (a third-party SMS/email provider, a future payment gateway for event fees), that's a Supabase Edge Function — the same mechanism mobile already uses for `migrate-password` — never a bespoke Next.js API route.
 - No `service_role` key anywhere in this codebase, ever.
 - No password-reset, credential-change, or forced-reset mechanism of any kind — per the standing "real user credentials are never touched by any mechanism" rule already governing M5/M6. If self-service password reset is ever wanted, it goes through Supabase's own built-in email-reset flow, unchanged — never custom logic, and only after an explicit ask.
-- No SWR/React Query or other data-fetching library/abstraction layer.
+- No SWR/React Query or other data-fetching library at launch — plain `useState`/`useEffect` per screen, matching mobile's existing manual-refetch pattern. Named exception, not a closed door: organizer's batch/bracket/dashboard screens can show the same underlying rows in multiple places, and mobile's own manual-refetch-after-mutation pattern is a known place for a "forgot to refresh the other screen" bug to hide. If that bug actually shows up during implementation, add React Query then, targeted to the screens that need it — it layers on top of the existing Supabase calls without requiring anything already built to be rewritten. Don't add it preemptively.
 
 These are deliberate YAGNI cuts for a <1,000-user authenticated app on a tight timeline, not omissions to revisit reflexively — only reopen one if a real, observed need forces it.
 
