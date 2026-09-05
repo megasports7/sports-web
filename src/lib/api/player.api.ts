@@ -84,7 +84,7 @@ function sanitizeProfileUpdate(data: Partial<Player>): Record<string, unknown> {
 async function callRegisterForEvent(
   supabase: ReturnType<typeof createClient>,
   params: {
-    event_id: number;
+    event_id: string;
     event_category?: string;
     age_category?: string;
     weight_category?: string;
@@ -281,12 +281,12 @@ export const playerApi = {
     })();
   },
 
-  registerForEvent(eventId: number): Promise<ApiResponse<Registration>> {
+  registerForEvent(eventId: string): Promise<ApiResponse<Registration>> {
     return callRegisterForEvent(createClient(), { event_id: eventId });
   },
 
   registerForEventWithCategory(data: {
-    event_id: number;
+    event_id: string;
     event_category: 'TANDING' | 'SENI';
     age_category?: string;
     weight_category?: string;

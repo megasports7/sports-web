@@ -61,7 +61,11 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
 
     setSubmitting(true);
     const res = await playerApi.registerForEventWithCategory({
-      event_id: Number(id),
+      // id is the event's real uuid (the URL path param) -- NOT a number.
+      // Number(id) here would silently send NaN to the register_for_event
+      // RPC; caught during the Phase 3 organizer discovery pass, which
+      // flagged this exact number/uuid type mismatch as a live-bug pattern.
+      event_id: id,
       event_category: eventCategory,
       age_category: ageCategory,
       weight_category:

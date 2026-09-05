@@ -64,8 +64,12 @@ export interface PlayerDashboardData {
 }
 
 // ===================== Event =====================
+// event_id is the table's real uuid (exposed under this legacy-looking field
+// name, per the mobile API's own convention) -- NOT a number at runtime,
+// despite historically being typed that way. A Number(event_id) coercion
+// anywhere is a bug, not a cast -- see the register page fix this uncovered.
 export interface Event {
-  event_id: number;
+  event_id: string;
   event_name: string;
   venue?: string;
   location?: string;
@@ -116,10 +120,113 @@ export interface Certificate {
 // ===================== Registration =====================
 export interface Registration {
   registration_id: string;
-  event_id: number;
-  status?: string;
+  event_id: string;
+  status?: 'pending' | 'approved' | 'rejected';
   event_category?: string;
   age_category?: string;
   weight_category?: string;
   seni_category?: string;
+  player_id?: number | null;
+  player_name?: string;
+  email?: string;
+  phone?: string;
+  attendance_status?: 'present' | null;
+}
+
+// ===================== Organizer =====================
+export interface Organizer {
+  organizer_id: number;
+  name: string;
+  email: string;
+  phone?: string;
+  district?: string;
+  state?: string;
+  photo?: string | null;
+  id_number?: string;
+  id_valid_until?: string;
+  created_at?: string;
+}
+
+export interface OrganizerDashboardData {
+  organizer: Organizer;
+  stats: {
+    total_events: number;
+    total_batches: number;
+    total_registrations: number;
+    active_today?: number;
+  };
+  recent_events: Event[];
+}
+
+// ===================== Batch =====================
+// batch_id/event_id/referee_id are real uuids (see the Event comment above
+// for why this file types them as such rather than `number`).
+export interface Batch {
+  batch_id: string;
+  organizer_id?: string;
+  batch_name: string;
+  batch_label?: string | null;
+  category?: string | null;
+  event_id?: string;
+  event_name?: string;
+  referee_id?: string | null;
+  referee_name?: string | null;
+  player_count?: number;
+  created_at?: string;
+}
+
+export interface BatchPlayer {
+  player_id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface Referee {
+  referee_id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  state?: string;
+  district?: string;
+}
+
+export interface OrganizerMatch {
+  match_id: string;
+  batch_id: string;
+  round_number?: number;
+  match_number?: number;
+  player1_id?: string | null;
+  player2_id?: string | null;
+  player1_name?: string;
+  player2_name?: string;
+  winner_id?: string | null;
+  player1_score?: number;
+  player2_score?: number;
+  status?: string;
+}
+
+export interface FilteredPlayer {
+  registration_id: string;
+  player_id: string;
+  player_name: string;
+  email?: string;
+  phone?: string;
+  state?: string;
+  district?: string;
+  event_category?: string;
+  age_category?: string;
+  weight_category?: string;
+  seni_category?: string;
+  status?: string;
+}
+
+export interface AttendanceList {
+  list_id: string;
+  event_id: string;
+  purpose?: string;
+  mode?: string;
+  unique_only?: boolean;
+  scan_count?: number;
+  created_at?: string;
 }
