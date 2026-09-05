@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { StatusBadge } from '@/lib/ui/StatusBadge';
 import type { Registration } from '@/lib/types';
 
 /** TANDING rows carry event_category ('TANDING') + age_category +
@@ -13,12 +14,6 @@ function categoryLabel(r: Registration): string {
     return r.seni_category || r.event_category || '-';
   }
   return [r.event_category, r.age_category, r.weight_category].filter(Boolean).join(' · ') || '-';
-}
-
-function statusBadgeClass(status?: string): string {
-  if (status === 'approved') return 'bg-green-100 text-green-700';
-  if (status === 'rejected') return 'bg-red-100 text-red-700';
-  return 'bg-amber-100 text-amber-700';
 }
 
 export default function OrganizerEventRegistrationsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -86,22 +81,22 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
     }
   }
 
-  if (loading) return <p className="text-gray-500">Loading registrations…</p>;
-  if (loadError) return <p className="text-red-600">{loadError}</p>;
+  if (loading) return <p className="text-muted">Loading registrations…</p>;
+  if (loadError) return <p className="text-corner-red">{loadError}</p>;
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-bold">Registrations</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Registrations</h1>
 
-      {actionMessage && <p className="mb-3 text-sm text-gray-600">{actionMessage}</p>}
+      {actionMessage && <p className="mb-3 text-sm text-muted">{actionMessage}</p>}
 
       {registrations.length === 0 ? (
-        <p className="text-sm text-gray-500">No registrations yet.</p>
+        <p className="text-sm text-muted">No registrations yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-md border border-line bg-surface">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+              <tr className="border-b border-line text-left text-xs text-muted">
                 <th className="px-4 py-2 font-medium">Player</th>
                 <th className="px-4 py-2 font-medium">Category</th>
                 <th className="px-4 py-2 font-medium">Status</th>
@@ -113,37 +108,29 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
               {registrations.map((r) => {
                 const busy = busyId === r.registration_id;
                 return (
-                  <tr key={r.registration_id} className="border-b border-gray-100 last:border-0">
+                  <tr key={r.registration_id} className="border-b border-line last:border-0">
                     <td className="px-4 py-2">
-                      <div className="font-medium">{r.player_name || 'Unknown'}</div>
-                      {r.email && <div className="text-xs text-gray-400">{r.email}</div>}
+                      <div className="font-medium text-ink">{r.player_name || 'Unknown'}</div>
+                      {r.email && <div className="text-xs text-muted">{r.email}</div>}
                     </td>
-                    <td className="px-4 py-2 text-gray-600">{categoryLabel(r)}</td>
+                    <td className="px-4 py-2 text-muted">{categoryLabel(r)}</td>
                     <td className="px-4 py-2">
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusBadgeClass(r.status)}`}>
-                        {r.status || 'pending'}
-                      </span>
+                      <StatusBadge status={r.status || 'pending'} />
                     </td>
-                    <td className="px-4 py-2">
-                      {r.attendance_status === 'present' && (
-                        <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">
-                          present
-                        </span>
-                      )}
-                    </td>
+                    <td className="px-4 py-2">{r.attendance_status === 'present' && <StatusBadge status="present" />}</td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => handleStatus(r.registration_id, 'approved')}
                           disabled={busy || r.status === 'approved'}
-                          className="rounded-lg border px-2 py-1 text-xs font-medium disabled:opacity-50"
+                          className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
                         >
                           Approve
                         </button>
                         <button
                           onClick={() => handleStatus(r.registration_id, 'rejected')}
                           disabled={busy || r.status === 'rejected'}
-                          className="rounded-lg border px-2 py-1 text-xs font-medium disabled:opacity-50"
+                          className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
                         >
                           Reject
                         </button>
@@ -151,7 +138,7 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
                           <button
                             onClick={() => handleAttendance(r.registration_id)}
                             disabled={busy}
-                            className="rounded-lg border px-2 py-1 text-xs font-medium disabled:opacity-50"
+                            className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
                           >
                             Mark attendance
                           </button>

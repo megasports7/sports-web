@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
 import type { Event } from '@/lib/types';
 
 export default function OrganizerEventsPage() {
@@ -20,54 +21,50 @@ export default function OrganizerEventsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-gray-500">Loading events…</p>;
+  if (loading) return <p className="text-muted">Loading events…</p>;
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-bold">Events</h1>
-        <Link href="/organizer/events/new" className="text-sm font-medium underline">
+        <h1 className="text-lg font-bold text-ink">Events</h1>
+        <Link href="/organizer/events/new" className="text-sm font-medium text-accent-green underline">
           + Create event
         </Link>
       </div>
 
-      {error && <p className="mb-3 text-red-600">{error}</p>}
+      {error && <p className="mb-3 text-corner-red">{error}</p>}
 
       {events.length === 0 ? (
-        <p className="text-sm text-gray-500">No events yet. Create your first event to get started.</p>
+        <p className="text-sm text-muted">No events yet. Create your first event to get started.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {events.map((e) => (
-            <li key={e.event_id} className="rounded-lg border border-gray-200 bg-white p-4">
-              <div className="font-semibold">{e.event_name}</div>
-              {(e.venue || e.location) && (
-                <div className="text-sm text-gray-500">{e.venue || e.location}</div>
-              )}
-              {e.event_date && (
-                <div className="text-xs text-gray-400">{new Date(e.event_date).toLocaleDateString()}</div>
-              )}
-              <div className="mt-1 text-xs font-medium text-gray-600">
+            <Card as="li" key={e.event_id}>
+              <div className="font-semibold text-ink">{e.event_name}</div>
+              {(e.venue || e.location) && <div className="text-sm text-muted">{e.venue || e.location}</div>}
+              {e.event_date && <div className="text-xs text-muted">{new Date(e.event_date).toLocaleDateString()}</div>}
+              <div className="mt-1 text-xs font-medium text-muted">
                 {e.player_count ?? 0} player{e.player_count === 1 ? '' : 's'} registered
               </div>
 
               <div className="mt-3 flex flex-wrap gap-4 text-sm font-medium">
-                <Link href={`/organizer/events/${e.event_id}/registrations`} className="underline">
+                <Link href={`/organizer/events/${e.event_id}/registrations`} className="text-accent-green underline">
                   Registrations
                 </Link>
-                <Link href={`/organizer/events/${e.event_id}/batches`} className="underline">
+                <Link href={`/organizer/events/${e.event_id}/batches`} className="text-accent-green underline">
                   Batches
                 </Link>
-                <Link href={`/organizer/events/${e.event_id}/lists/create`} className="underline">
+                <Link href={`/organizer/events/${e.event_id}/lists/create`} className="text-accent-green underline">
                   Attendance lists
                 </Link>
-                <Link href={`/organizer/events/${e.event_id}/scan-attendance`} className="underline">
+                <Link href={`/organizer/events/${e.event_id}/scan-attendance`} className="text-accent-green underline">
                   Scan attendance
                 </Link>
-                <Link href={`/organizer/events/${e.event_id}/rapid-mode`} className="underline">
+                <Link href={`/organizer/events/${e.event_id}/rapid-mode`} className="text-accent-green underline">
                   Rapid mode
                 </Link>
               </div>
-            </li>
+            </Card>
           ))}
         </ul>
       )}
