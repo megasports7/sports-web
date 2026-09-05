@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
+import { StatTile } from '@/lib/ui/StatTile';
 import type { OrganizerDashboardData } from '@/lib/types';
 
 export default function OrganizerHome() {
@@ -20,66 +22,53 @@ export default function OrganizerHome() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-gray-500">Loading dashboard…</p>;
-  if (error) return <p className="text-red-600">{error}</p>;
-  if (!data) return <p className="text-red-600">Dashboard not found.</p>;
+  if (loading) return <p className="text-muted">Loading dashboard…</p>;
+  if (error) return <p className="text-corner-red">{error}</p>;
+  if (!data) return <p className="text-corner-red">Dashboard not found.</p>;
 
   const { organizer, stats, recent_events } = data;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold">Welcome, {organizer.name}</h1>
-          <p className="text-sm text-gray-500">{organizer.email}</p>
-        </div>
-      </div>
+      <Card accent="green">
+        <h1 className="text-lg font-bold text-ink">Welcome, {organizer.name}</h1>
+        <p className="text-sm text-muted">{organizer.email}</p>
+      </Card>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Events" value={stats.total_events} />
-        <StatTile label="Batches" value={stats.total_batches} />
-        <StatTile label="Registrations" value={stats.total_registrations} />
-        <StatTile label="Active today" value={stats.active_today ?? 0} />
+        <StatTile value={stats.total_events} label="Events" accent="green" />
+        <StatTile value={stats.total_batches} label="Batches" accent="blue" />
+        <StatTile value={stats.total_registrations} label="Registrations" accent="none" />
+        <StatTile value={stats.active_today ?? 0} label="Active today" accent="pending" />
       </div>
 
       <div className="flex gap-4 text-sm font-medium">
-        <Link href="/organizer/events" className="underline">
+        <Link href="/organizer/events" className="text-accent-green underline">
           View all events
         </Link>
-        <Link href="/organizer/events/new" className="underline">
+        <Link href="/organizer/events/new" className="text-accent-green underline">
           Create event
         </Link>
       </div>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-gray-600">Recent events</h2>
+        <h2 className="mb-3 text-sm font-semibold text-muted">Recent events</h2>
         {recent_events.length === 0 ? (
-          <p className="text-sm text-gray-500">No events yet. Create your first event to get started.</p>
+          <p className="text-sm text-muted">No events yet. Create your first event to get started.</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {recent_events.map((e) => (
-              <li key={e.event_id} className="rounded-lg border border-gray-200 bg-white p-4">
-                <Link href={`/organizer/events/${e.event_id}/registrations`} className="font-semibold underline">
+              <Card as="li" key={e.event_id}>
+                <Link href={`/organizer/events/${e.event_id}/registrations`} className="font-semibold text-ink underline">
                   {e.event_name}
                 </Link>
-                {(e.venue || e.location) && <div className="text-sm text-gray-500">{e.venue || e.location}</div>}
-                {e.event_date && (
-                  <div className="text-xs text-gray-400">{new Date(e.event_date).toLocaleDateString()}</div>
-                )}
-              </li>
+                {(e.venue || e.location) && <div className="text-sm text-muted">{e.venue || e.location}</div>}
+                {e.event_date && <div className="text-xs text-muted">{new Date(e.event_date).toLocaleDateString()}</div>}
+              </Card>
             ))}
           </ul>
         )}
       </section>
-    </div>
-  );
-}
-
-function StatTile({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-sm text-gray-500">{label}</div>
     </div>
   );
 }

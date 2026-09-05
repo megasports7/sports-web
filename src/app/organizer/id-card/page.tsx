@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
 import type { Organizer } from '@/lib/types';
 
 export default function OrganizerIdCardPage() {
@@ -30,8 +31,8 @@ export default function OrganizerIdCardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-gray-500">Loading ID card…</p>;
-  if (!organizer) return <p className="text-red-600">ID card not available.</p>;
+  if (loading) return <p className="text-muted">Loading ID card…</p>;
+  if (!organizer) return <p className="text-corner-red">ID card not available.</p>;
 
   const idNumber = organizer.id_number || (organizer.organizer_id ? `#${organizer.organizer_id}` : organizer.id.slice(0, 8));
 
@@ -39,18 +40,18 @@ export default function OrganizerIdCardPage() {
     <div className="mx-auto flex max-w-sm flex-col gap-4">
       {/* View-only, matching the player ID card's own v1 decision -- no
           download-as-image button. */}
-      <section className="rounded-lg border border-gray-200 bg-white p-5">
+      <Card accent="green" className="p-5">
         <div className="flex items-center gap-4">
           {organizer.photo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={organizer.photo} alt="" className="h-16 w-16 rounded-lg object-cover" />
           ) : (
-            <div className="h-16 w-16 rounded-lg bg-gray-100" />
+            <div className="h-16 w-16 rounded-lg bg-bg" />
           )}
           <div>
-            <div className="font-bold">{organizer.name}</div>
-            <div className="text-xs text-gray-500">{idNumber}</div>
-            <div className="text-xs font-medium">Organizer</div>
+            <div className="font-bold text-ink">{organizer.name}</div>
+            <div className="text-xs text-muted">{idNumber}</div>
+            <div className="text-xs font-medium text-accent-green">Organizer</div>
           </div>
         </div>
 
@@ -58,18 +59,18 @@ export default function OrganizerIdCardPage() {
           <div className="mt-4 flex flex-col items-center gap-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qrDataUrl} alt="Organizer QR code" width={160} height={160} />
-            <span className="text-xs text-gray-400">Scan to verify</span>
+            <span className="text-xs text-muted">Scan to verify</span>
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="mb-2 text-sm font-semibold text-gray-600">Organization details</h2>
+      <Card className="p-5">
+        <h2 className="mb-2 text-sm font-semibold text-muted">Organization details</h2>
         <dl className="flex flex-col gap-2 text-sm">
           <Row label="District" value={organizer.district || 'N/A'} />
           <Row label="State" value={organizer.state || 'N/A'} />
         </dl>
-      </section>
+      </Card>
     </div>
   );
 }
@@ -77,8 +78,8 @@ export default function OrganizerIdCardPage() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+      <dt className="text-muted">{label}</dt>
+      <dd className="font-medium text-ink">{value}</dd>
     </div>
   );
 }

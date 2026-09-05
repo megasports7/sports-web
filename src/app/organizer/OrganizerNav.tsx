@@ -1,10 +1,5 @@
 'use client';
 
-/**
- * Plain functional nav for v1, mirroring src/app/player/PlayerNav.tsx --
- * same timing decision: the visual design pass is deliberately deferred
- * until every role's backend is proven working.
- */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
@@ -21,13 +16,13 @@ export function OrganizerNav() {
   const { signOut } = useAuth();
 
   return (
-    <nav className="flex flex-wrap items-center gap-1 border-b border-gray-200 bg-white px-4 py-2">
+    <nav className="flex flex-wrap items-center gap-1 border-b border-line bg-surface px-4 py-2">
       {LINKS.map((link) => (
         <Link
           key={link.href}
           href={link.href}
           className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-            pathname === link.href ? 'bg-black text-white' : 'text-gray-700 hover:bg-gray-100'
+            pathname === link.href ? 'bg-accent-green text-surface' : 'text-ink hover:bg-bg'
           }`}
         >
           {link.label}
@@ -35,7 +30,7 @@ export function OrganizerNav() {
       ))}
       <button
         onClick={() => signOut()}
-        className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 hover:bg-gray-100"
+        className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-muted hover:bg-bg"
       >
         Sign out
       </button>

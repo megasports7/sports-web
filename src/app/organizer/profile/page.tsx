@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
 import type { Organizer } from '@/lib/types';
 
 const FIELDS: { key: keyof Organizer; label: string }[] = [
@@ -79,40 +80,40 @@ export default function OrganizerProfilePage() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Loading profile…</p>;
-  if (!organizer) return <p className="text-red-600">Profile not found.</p>;
+  if (loading) return <p className="text-muted">Loading profile…</p>;
+  if (!organizer) return <p className="text-corner-red">Profile not found.</p>;
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-lg font-semibold">Profile</h1>
+      <h1 className="text-lg font-semibold text-ink">Profile</h1>
 
-      <section className="flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="flex items-center gap-4">
         {organizer.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={organizer.photo} alt="" className="h-20 w-20 rounded-full object-cover" />
         ) : (
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 text-xs text-gray-400">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-bg text-xs text-muted">
             No photo
           </div>
         )}
         <div>
-          <div className="font-bold">{organizer.name}</div>
+          <div className="font-bold text-ink">{organizer.name}</div>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="mt-1 text-sm font-medium underline disabled:opacity-50"
+            className="mt-1 text-sm font-medium text-accent-green underline disabled:opacity-50"
           >
             {uploading ? 'Uploading…' : 'Change photo'}
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
         </div>
-      </section>
+      </Card>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
+      <Card>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-600">Personal info</h2>
+          <h2 className="text-sm font-semibold text-muted">Personal info</h2>
           {!editing && (
-            <button onClick={() => setEditing(true)} className="text-sm font-medium underline">
+            <button onClick={() => setEditing(true)} className="text-sm font-medium text-accent-green underline">
               Edit
             </button>
           )}
@@ -120,21 +121,21 @@ export default function OrganizerProfilePage() {
 
         {editing ? (
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">
+            <label className="flex flex-col gap-1 text-sm text-ink">
               Name
               <input
                 value={form.name ?? ''}
                 onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                className="rounded-lg border border-gray-300 px-3 py-2"
+                className="rounded-md border border-line px-3 py-2"
               />
             </label>
             {FIELDS.map((f) => (
-              <label key={f.key} className="flex flex-col gap-1 text-sm">
+              <label key={f.key} className="flex flex-col gap-1 text-sm text-ink">
                 {f.label}
                 <input
                   value={form[f.key] ?? ''}
                   onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                  className="rounded-lg border border-gray-300 px-3 py-2"
+                  className="rounded-md border border-line px-3 py-2"
                 />
               </label>
             ))}
@@ -142,11 +143,11 @@ export default function OrganizerProfilePage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
-              <button onClick={() => setEditing(false)} className="rounded-lg border px-3 py-2 text-sm font-medium">
+              <button onClick={() => setEditing(false)} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
                 Cancel
               </button>
             </div>
@@ -161,25 +162,25 @@ export default function OrganizerProfilePage() {
           </dl>
         )}
 
-        {message && <p className="mt-3 text-sm text-gray-600">{message}</p>}
-      </section>
+        {message && <p className="mt-3 text-sm text-muted">{message}</p>}
+      </Card>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 text-sm font-semibold text-gray-600">ID (admin-assigned)</h2>
+      <Card>
+        <h2 className="mb-3 text-sm font-semibold text-muted">ID (admin-assigned)</h2>
         <dl className="flex flex-col gap-2 text-sm">
           <Row label="ID number" value={organizer.id_number || '-'} />
           <Row label="ID valid until" value={organizer.id_valid_until || '-'} />
         </dl>
-      </section>
+      </Card>
     </div>
   );
 }
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between border-b border-gray-100 pb-2">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+    <div className="flex justify-between border-b border-line pb-2">
+      <dt className="text-muted">{label}</dt>
+      <dd className="font-medium text-ink">{value}</dd>
     </div>
   );
 }
