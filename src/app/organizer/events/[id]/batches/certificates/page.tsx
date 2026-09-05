@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
 import type { Batch } from '@/lib/types';
 
 export default function OrganizerCertificatesPage({ params }: { params: Promise<{ id: string }> }) {
@@ -76,26 +77,26 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
     setGenerateMessage(res.message || (res.success ? 'Done.' : 'Could not generate certificates.'));
   }
 
-  if (loadingBatches) return <p className="text-gray-500">Loading batches…</p>;
+  if (loadingBatches) return <p className="text-muted">Loading batches…</p>;
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-bold">Certificates</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Certificates</h1>
 
       {batchesError ? (
-        <p className="mb-4 text-red-600">{batchesError}</p>
+        <p className="mb-4 text-corner-red">{batchesError}</p>
       ) : batches.length === 0 ? (
-        <p className="mb-4 text-sm text-gray-500">No batches for this event yet.</p>
+        <p className="mb-4 text-sm text-muted">No batches for this event yet.</p>
       ) : (
         <div className="mb-4 flex flex-col gap-1">
-          <label htmlFor="batch-select" className="text-sm font-medium text-gray-600">
+          <label htmlFor="batch-select" className="text-sm font-medium text-muted">
             Batch
           </label>
           <select
             id="batch-select"
             value={selectedBatchId}
             onChange={(e) => setSelectedBatchId(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2"
+            className="rounded-md border border-line px-3 py-2"
           >
             <option value="">Select a batch…</option>
             {batches.map((b) => (
@@ -111,48 +112,47 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
         <button
           onClick={handleGenerate}
           disabled={generating}
-          className="rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-50"
+          className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink disabled:opacity-50"
         >
           {generating ? 'Generating…' : 'Generate certificates'}
         </button>
-        {generateMessage && <p className="mt-2 text-sm text-gray-600">{generateMessage}</p>}
+        {generateMessage && <p className="mt-2 text-sm text-muted">{generateMessage}</p>}
       </div>
 
       {selectedBatchId &&
         (loadingCerts ? (
-          <p className="text-gray-500">Loading certificates…</p>
+          <p className="text-muted">Loading certificates…</p>
         ) : certsError ? (
-          <p className="text-red-600">{certsError}</p>
+          <p className="text-corner-red">{certsError}</p>
         ) : certificates.length === 0 ? (
-          <p className="text-sm text-gray-500">No certificates for this batch yet.</p>
+          <p className="text-sm text-muted">No certificates for this batch yet.</p>
         ) : (
           <>
             <ul className="flex flex-col gap-2">
               {certificates.map((c) => {
                 const certId = String(c.cert_id ?? c.certificate_id ?? '');
                 const playerName = (c.player_name as string) || 'Unknown player';
-                const levelOrPosition =
-                  (c.level as string) || (c.position as string) || (c.certificate_type as string) || '-';
+                const levelOrPosition = (c.level as string) || (c.position as string) || (c.certificate_type as string) || '-';
                 return (
-                  <li key={certId} className="rounded-lg border border-gray-200 bg-white p-4">
+                  <Card as="li" key={certId}>
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="font-semibold">{playerName}</div>
-                        <div className="text-xs uppercase text-gray-500">{levelOrPosition}</div>
+                        <div className="font-semibold text-ink">{playerName}</div>
+                        <div className="text-xs uppercase text-muted">{levelOrPosition}</div>
                       </div>
                       <button
                         onClick={() => handleView(c)}
                         disabled={viewBusyId === certId}
-                        className="shrink-0 rounded-lg border px-2 py-1 text-xs font-medium disabled:opacity-50"
+                        className="shrink-0 rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
                       >
                         View
                       </button>
                     </div>
-                  </li>
+                  </Card>
                 );
               })}
             </ul>
-            {viewMessage && <p className="mt-3 text-sm text-gray-600">{viewMessage}</p>}
+            {viewMessage && <p className="mt-3 text-sm text-muted">{viewMessage}</p>}
           </>
         ))}
     </div>

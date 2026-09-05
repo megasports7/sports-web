@@ -3,6 +3,7 @@
 import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
 import type { FilteredPlayer } from '@/lib/types';
 import { WEIGHT_CATEGORIES_BY_AGE, SIMPLE_WEIGHT_AGES } from '@/lib/player/registrationCategories';
 
@@ -109,12 +110,12 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="mb-4 text-lg font-bold">Create Batch</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Create Batch</h1>
 
-      <section className="mb-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-gray-600">Filter players</h2>
+      <Card className="mb-4 flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-muted">Filter players</h2>
 
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Event category
           <select
             value={eventCategory}
@@ -125,7 +126,7 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
               setWeightText('');
               setSeniType('');
             }}
-            className="rounded-lg border border-gray-300 px-3 py-2"
+            className="rounded-md border border-line px-3 py-2"
           >
             <option value="">Any</option>
             <option value="TANDING">TANDING</option>
@@ -133,7 +134,7 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Age category
           <select
             value={ageCategory}
@@ -142,7 +143,7 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
               setWeightCategory('');
               setWeightText('');
             }}
-            className="rounded-lg border border-gray-300 px-3 py-2"
+            className="rounded-md border border-line px-3 py-2"
           >
             <option value="">Any</option>
             {AGE_CATEGORIES.map((a) => (
@@ -153,13 +154,13 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Weight category
           {useWeightSelect ? (
             <select
               value={weightCategory}
               onChange={(e) => setWeightCategory(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2"
+              className="rounded-md border border-line px-3 py-2"
             >
               <option value="">Any</option>
               {(WEIGHT_CATEGORIES_BY_AGE[ageCategory] ?? []).map((c) => (
@@ -173,17 +174,17 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
               value={weightText}
               onChange={(e) => setWeightText(e.target.value)}
               placeholder="Weight category (optional)"
-              className="rounded-lg border border-gray-300 px-3 py-2"
+              className="rounded-md border border-line px-3 py-2"
             />
           )}
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Seni type
           <select
             value={seniType}
             onChange={(e) => setSeniType(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2"
+            className="rounded-md border border-line px-3 py-2"
           >
             <option value="">Any</option>
             {SENI_TYPES.map((s) => (
@@ -198,80 +199,74 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
           type="button"
           onClick={handleShowPlayers}
           disabled={loadingPlayers}
-          className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {loadingPlayers ? 'Loading…' : 'Show players'}
         </button>
-      </section>
+      </Card>
 
       {hasSearched && (
-        <section className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+        <Card className="mb-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-gray-600">
+            <h2 className="text-sm font-semibold text-muted">
               Players ({total}) — {selected.size} selected
             </h2>
             <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setSelected(new Set(players.map((p) => p.player_id)))}
-                className="text-sm font-medium underline"
-              >
+              <button type="button" onClick={() => setSelected(new Set(players.map((p) => p.player_id)))} className="text-sm font-medium text-accent-green underline">
                 Select all
               </button>
-              <button type="button" onClick={() => setSelected(new Set())} className="text-sm font-medium underline">
+              <button type="button" onClick={() => setSelected(new Set())} className="text-sm font-medium text-accent-green underline">
                 Deselect all
               </button>
             </div>
           </div>
 
-          {byesRequired > 0 && <p className="mb-2 text-sm text-gray-600">Byes required: {byesRequired}</p>}
+          {byesRequired > 0 && <p className="mb-2 text-sm text-muted">Byes required: {byesRequired}</p>}
 
           {loadingPlayers ? (
-            <p className="text-sm text-gray-500">Loading players…</p>
+            <p className="text-sm text-muted">Loading players…</p>
           ) : players.length === 0 ? (
-            <p className="text-sm text-gray-500">No players match these filters.</p>
+            <p className="text-sm text-muted">No players match these filters.</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {players.map((p) => (
-                <li key={p.registration_id} className="flex items-center gap-2 border-b border-gray-100 pb-2 text-sm">
+                <li key={p.registration_id} className="flex items-center gap-2 border-b border-line pb-2 text-sm">
                   <input type="checkbox" checked={selected.has(p.player_id)} onChange={() => toggle(p.player_id)} />
                   <div>
-                    <div className="font-medium">{p.player_name}</div>
-                    <div className="text-xs text-gray-500">
-                      {[p.event_category, p.age_category, p.weight_category, p.seni_category]
-                        .filter(Boolean)
-                        .join(' · ')}
+                    <div className="font-medium text-ink">{p.player_name}</div>
+                    <div className="text-xs text-muted">
+                      {[p.event_category, p.age_category, p.weight_category, p.seni_category].filter(Boolean).join(' · ')}
                     </div>
                   </div>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </Card>
       )}
 
-      <section className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4">
-        <label className="flex flex-col gap-1 text-sm">
+      <Card className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Batch name (optional)
           <input
             value={batchName}
             onChange={(e) => setBatchName(e.target.value)}
             placeholder={computeLabel()}
-            className="rounded-lg border border-gray-300 px-3 py-2"
+            className="rounded-md border border-line px-3 py-2"
           />
         </label>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-corner-red">{error}</p>}
 
         <button
           type="button"
           onClick={handleCreate}
           disabled={creating || selected.size === 0}
-          className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {creating ? 'Creating…' : 'Create batch'}
         </button>
-      </section>
+      </Card>
     </div>
   );
 }

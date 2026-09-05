@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
 import type { Batch, Referee } from '@/lib/types';
 
 export default function EventBatchesPage({ params }: { params: Promise<{ id: string }> }) {
@@ -49,51 +50,48 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
     setAssigningId(null);
   }
 
-  if (loading) return <p className="text-gray-500">Loading batches…</p>;
+  if (loading) return <p className="text-muted">Loading batches…</p>;
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-bold">Batches</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Batches</h1>
 
       <div className="mb-4 flex gap-4 text-sm">
-        <Link href={`/organizer/events/${id}/batches/create`} className="font-medium underline">
+        <Link href={`/organizer/events/${id}/batches/create`} className="font-medium text-accent-green underline">
           + Create batch
         </Link>
-        <Link href={`/organizer/events/${id}/batches/certificates`} className="font-medium underline">
+        <Link href={`/organizer/events/${id}/batches/certificates`} className="font-medium text-accent-green underline">
           View certificates
         </Link>
       </div>
 
-      {error && <p className="mb-3 text-red-600">{error}</p>}
-      {message && <p className="mb-3 text-gray-600">{message}</p>}
+      {error && <p className="mb-3 text-corner-red">{error}</p>}
+      {message && <p className="mb-3 text-muted">{message}</p>}
 
       {batches.length === 0 ? (
-        <p className="text-sm text-gray-500">No batches yet.</p>
+        <p className="text-sm text-muted">No batches yet.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {batches.map((b) => (
-            <li key={b.batch_id} className="rounded-lg border border-gray-200 bg-white p-4">
+            <Card as="li" key={b.batch_id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-semibold">{b.batch_name}</div>
-                  {b.batch_label && <div className="text-sm text-gray-500">{b.batch_label}</div>}
-                  <div className="text-xs text-gray-400">{b.player_count ?? 0} players</div>
+                  <div className="font-semibold text-ink">{b.batch_name}</div>
+                  {b.batch_label && <div className="text-sm text-muted">{b.batch_label}</div>}
+                  <div className="text-xs text-muted">{b.player_count ?? 0} players</div>
                 </div>
-                <Link
-                  href={`/organizer/batches/${b.batch_id}/manage`}
-                  className="shrink-0 text-sm font-medium underline"
-                >
+                <Link href={`/organizer/batches/${b.batch_id}/manage`} className="shrink-0 text-sm font-medium text-accent-green underline">
                   Manage
                 </Link>
               </div>
 
-              <label className="mt-3 flex flex-col gap-1 text-sm">
+              <label className="mt-3 flex flex-col gap-1 text-sm text-ink">
                 Referee ({b.referee_name || 'Unassigned'})
                 <select
                   value={b.referee_id ?? ''}
                   disabled={assigningId === b.batch_id}
                   onChange={(e) => handleAssign(b.batch_id, e.target.value)}
-                  className="rounded-lg border border-gray-300 px-3 py-2 disabled:opacity-50"
+                  className="rounded-md border border-line px-3 py-2 disabled:opacity-50"
                 >
                   <option value="">Unassigned</option>
                   {referees.map((r) => (
@@ -103,7 +101,7 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
                   ))}
                 </select>
               </label>
-            </li>
+            </Card>
           ))}
         </ul>
       )}
