@@ -74,42 +74,40 @@ export default function ScanListPage({ params }: { params: Promise<{ id: string 
   return (
     <div className="mx-auto max-w-md">
       <div className="mb-4 flex items-baseline justify-between">
-        <h1 className="text-lg font-bold">Scan list</h1>
-        <span className="text-sm text-gray-500">{scanCount} scans recorded</span>
+        <h1 className="text-lg font-bold text-ink">Scan list</h1>
+        <span className="text-sm text-muted">{scanCount} scans recorded</span>
       </div>
 
       <QrScanner onScan={handleScan} active={!scanned} />
 
       {lastResult && (
-        <div
-          className={`mt-4 rounded-lg p-3 text-sm font-medium text-white ${lastResult.ok ? 'bg-green-600' : 'bg-red-600'}`}
-        >
+        <div className={`mt-4 rounded-md p-3 text-sm font-medium text-surface ${lastResult.ok ? 'bg-accent-green' : 'bg-corner-red'}`}>
           {lastResult.msg}
         </div>
       )}
 
       <section className="mt-6">
-        <h2 className="mb-2 text-sm font-semibold text-gray-600">Recent scans</h2>
+        <h2 className="mb-2 text-sm font-semibold text-muted">Recent scans</h2>
         {recentScans.length === 0 ? (
-          <p className="text-sm text-gray-500">No scans yet.</p>
+          <p className="text-sm text-muted">No scans yet.</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {recentScans.map((s) => (
               <li
                 key={s.key}
-                className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${
                   s.status === 'success'
-                    ? 'border-green-100 bg-green-50'
+                    ? 'border-accent-green/30 bg-accent-green/10'
                     : s.status === 'duplicate'
-                      ? 'border-amber-100 bg-amber-50'
-                      : 'border-red-100 bg-red-50'
+                      ? 'border-status-pending/30 bg-status-pending/10'
+                      : 'border-corner-red/30 bg-corner-red/10'
                 }`}
               >
                 <div>
-                  <div className="font-medium">{s.name}</div>
-                  <div className="text-xs text-gray-500">{s.message}</div>
+                  <div className="font-medium text-ink">{s.name}</div>
+                  <div className="text-xs text-muted">{s.message}</div>
                 </div>
-                <span className="text-xs text-gray-400">{s.timestamp}</span>
+                <span className="text-xs text-muted">{s.timestamp}</span>
               </li>
             ))}
           </ul>

@@ -3,6 +3,7 @@
 import { use, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { QrScanner } from '@/lib/qr/QrScanner';
+import { Card } from '@/lib/ui/Card';
 
 export default function ScanAttendancePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
@@ -23,26 +24,17 @@ export default function ScanAttendancePage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="mx-auto max-w-md">
-      <h1 className="mb-4 text-lg font-bold">Scan attendance</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Scan attendance</h1>
 
       {!result && <QrScanner onScan={handleScan} active={!busy} />}
 
       {result && (
-        <div
-          className={`mt-4 rounded-lg border p-4 text-sm ${
-            result.ok ? 'border-green-200 bg-green-50 text-green-700' : 'border-red-200 bg-red-50 text-red-700'
-          }`}
-        >
-          <p className="mb-3 font-medium">{result.message}</p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setResult(null)}
-              className="rounded-lg bg-black px-3 py-2 text-xs font-medium text-white"
-            >
-              {result.ok ? 'Scan more' : 'Try again'}
-            </button>
-          </div>
-        </div>
+        <Card accent={result.ok ? 'green' : 'red'} className="mt-4">
+          <p className="mb-3 text-sm font-medium text-ink">{result.message}</p>
+          <button onClick={() => setResult(null)} className="rounded-md bg-accent-green px-3 py-2 text-xs font-medium text-surface">
+            {result.ok ? 'Scan more' : 'Try again'}
+          </button>
+        </Card>
       )}
     </div>
   );

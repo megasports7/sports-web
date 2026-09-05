@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { Card } from '@/lib/ui/Card';
 import type { AttendanceList } from '@/lib/types';
 
 const MODES = ['Enter', 'Leave', 'Lunch', 'Other'];
@@ -82,25 +83,17 @@ export default function CreateAttendanceListPage({ params }: { params: Promise<{
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-bold">Create Attendance List</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Create Attendance List</h1>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4">
-        <label className="flex flex-col gap-1 text-sm">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-md border border-line bg-surface p-4">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Purpose
-          <input
-            value={purpose}
-            onChange={(e) => setPurpose(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2"
-          />
+          <input value={purpose} onChange={(e) => setPurpose(e.target.value)} className="rounded-md border border-line px-3 py-2" />
         </label>
 
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex flex-col gap-1 text-sm text-ink">
           Mode
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2"
-          >
+          <select value={mode} onChange={(e) => setMode(e.target.value)} className="rounded-md border border-line px-3 py-2">
             {MODES.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -109,54 +102,49 @@ export default function CreateAttendanceListPage({ params }: { params: Promise<{
           </select>
         </label>
 
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm text-ink">
           <input type="checkbox" checked={uniqueOnly} onChange={(e) => setUniqueOnly(e.target.checked)} />
           Unique scan per player
         </label>
 
-        {error && <p className="text-red-600">{error}</p>}
-        {message && <p className="text-gray-600">{message}</p>}
+        {error && <p className="text-corner-red">{error}</p>}
+        {message && <p className="text-muted">{message}</p>}
 
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {submitting ? 'Creating…' : 'Create list'}
         </button>
       </form>
 
-      <h2 className="mb-3 mt-6 text-sm font-semibold text-gray-600">Past lists</h2>
+      <h2 className="mb-3 mt-6 text-sm font-semibold text-muted">Past lists</h2>
 
       {loading ? (
-        <p className="text-gray-500">Loading lists…</p>
+        <p className="text-muted">Loading lists…</p>
       ) : (
         <>
-          {listError && <p className="mb-3 text-red-600">{listError}</p>}
+          {listError && <p className="mb-3 text-corner-red">{listError}</p>}
 
           {lists.length === 0 ? (
-            <p className="text-sm text-gray-500">No attendance lists yet.</p>
+            <p className="text-sm text-muted">No attendance lists yet.</p>
           ) : (
             <ul className="flex flex-col gap-3">
               {lists.map((l) => (
-                <li key={l.list_id} className="rounded-lg border border-gray-200 bg-white p-4">
+                <Card as="li" key={l.list_id}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-semibold">{l.purpose}</div>
-                      <div className="text-sm text-gray-500">{l.mode}</div>
-                      <div className="mt-1 text-xs font-medium text-gray-600">{l.scan_count ?? 0} scans</div>
-                      {l.created_at && (
-                        <div className="text-xs text-gray-400">{new Date(l.created_at).toLocaleDateString()}</div>
-                      )}
+                      <div className="font-semibold text-ink">{l.purpose}</div>
+                      <div className="text-sm text-muted">{l.mode}</div>
+                      <div className="mt-1 text-xs font-medium text-muted">{l.scan_count ?? 0} scans</div>
+                      {l.created_at && <div className="text-xs text-muted">{new Date(l.created_at).toLocaleDateString()}</div>}
                     </div>
-                    <Link
-                      href={`/organizer/lists/${l.list_id}/scan`}
-                      className="shrink-0 rounded-lg bg-black px-3 py-1.5 text-xs font-semibold text-white"
-                    >
+                    <Link href={`/organizer/lists/${l.list_id}/scan`} className="shrink-0 rounded-md bg-accent-green px-3 py-1.5 text-xs font-semibold text-surface">
                       Scan
                     </Link>
                   </div>
-                </li>
+                </Card>
               ))}
             </ul>
           )}

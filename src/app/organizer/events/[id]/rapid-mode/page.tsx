@@ -4,6 +4,8 @@ import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { QrScanner } from '@/lib/qr/QrScanner';
+import { Card } from '@/lib/ui/Card';
+import { BracketList, BracketRow } from '@/lib/ui/Bracket';
 import {
   TANDING_AGE_CATEGORIES,
   SENI_AGE_CATEGORIES,
@@ -140,13 +142,13 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="mb-4 text-lg font-bold">Rapid mode</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">Rapid mode</h1>
 
-      <section className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="mb-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-600">Category</h2>
+          <h2 className="text-sm font-semibold text-muted">Category</h2>
           {categoryLocked && (
-            <button onClick={resetCategory} className="text-xs font-medium text-red-600 underline">
+            <button onClick={resetCategory} className="text-xs font-medium text-corner-red underline">
               Change category
             </button>
           )}
@@ -162,7 +164,7 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
               setWeightText('');
               setSeniType('');
             }}
-            className="rounded-lg border border-gray-300 px-3 py-2 disabled:opacity-50"
+            className="rounded-md border border-line px-3 py-2 disabled:opacity-50"
           >
             <option value="">Event category</option>
             <option value="TANDING">TANDING</option>
@@ -178,7 +180,7 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
                 setWeightCategory('');
                 setWeightText('');
               }}
-              className="rounded-lg border border-gray-300 px-3 py-2 disabled:opacity-50"
+              className="rounded-md border border-line px-3 py-2 disabled:opacity-50"
             >
               <option value="">Age category</option>
               {ageOptions.map((c) => (
@@ -196,7 +198,7 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
                 value={weightCategory}
                 disabled={categoryLocked}
                 onChange={(e) => setWeightCategory(e.target.value)}
-                className="rounded-lg border border-gray-300 px-3 py-2 disabled:opacity-50"
+                className="rounded-md border border-line px-3 py-2 disabled:opacity-50"
               >
                 <option value="">Weight category</option>
                 {(WEIGHT_CATEGORIES_BY_AGE[ageCategory] ?? []).map((c) => (
@@ -211,7 +213,7 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
                 disabled={categoryLocked}
                 onChange={(e) => setWeightText(e.target.value)}
                 placeholder="Weight (kg)"
-                className="rounded-lg border border-gray-300 px-3 py-2 disabled:opacity-50"
+                className="rounded-md border border-line px-3 py-2 disabled:opacity-50"
               />
             ))}
 
@@ -220,7 +222,7 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
               value={seniType}
               disabled={categoryLocked}
               onChange={(e) => setSeniType(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 disabled:opacity-50"
+              className="rounded-md border border-line px-3 py-2 disabled:opacity-50"
             >
               <option value="">Seni type</option>
               {SENI_CATEGORIES.map((c) => (
@@ -231,90 +233,83 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
             </select>
           )}
         </div>
-        {(eventCategory || ageCategory) && <p className="mt-3 text-xs text-gray-500">{categoryLabel()}</p>}
-      </section>
+        {(eventCategory || ageCategory) && <p className="mt-3 text-xs text-muted">{categoryLabel()}</p>}
+      </Card>
 
-      <section className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="mb-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-600">Scan players</h2>
-          <button onClick={() => setPaused((p) => !p)} className="text-xs font-medium underline">
+          <h2 className="text-sm font-semibold text-muted">Scan players</h2>
+          <button onClick={() => setPaused((p) => !p)} className="text-xs font-medium text-accent-green underline">
             {paused ? 'Resume camera' : 'Pause camera'}
           </button>
         </div>
-        {!paused ? <QrScanner onScan={handleScan} active={!scanning} /> : <p className="text-sm text-gray-500">Scanner paused.</p>}
-        {scanMessage && <p className="mt-2 text-sm text-gray-600">{scanMessage}</p>}
-      </section>
+        {!paused ? <QrScanner onScan={handleScan} active={!scanning} /> : <p className="text-sm text-muted">Scanner paused.</p>}
+        {scanMessage && <p className="mt-2 text-sm text-muted">{scanMessage}</p>}
+      </Card>
 
-      <section className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="mb-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-600">
+          <h2 className="text-sm font-semibold text-muted">
             Players ({players.length}) — {activeCount} active
           </h2>
           <div className="flex gap-3">
-            <button onClick={selectAll} className="text-xs font-medium underline">
+            <button onClick={selectAll} className="text-xs font-medium text-accent-green underline">
               Select all
             </button>
-            <button onClick={deselectAll} className="text-xs font-medium underline">
+            <button onClick={deselectAll} className="text-xs font-medium text-accent-green underline">
               Deselect all
             </button>
           </div>
         </div>
-        {byesRequired > 0 && <p className="mb-2 text-sm text-gray-600">Byes required: {byesRequired}</p>}
+        {byesRequired > 0 && <p className="mb-2 text-sm text-muted">Byes required: {byesRequired}</p>}
         {players.length === 0 ? (
-          <p className="text-sm text-gray-500">No players scanned yet.</p>
+          <p className="text-sm text-muted">No players scanned yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
-                  <th className="py-1 pr-2">Name</th>
-                  <th className="py-1 pr-2">State</th>
-                  <th className="py-1 pr-2">District</th>
-                  <th className="py-1 pr-2">BYE?</th>
-                  <th className="py-1" />
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((p) => (
-                  <tr key={p.player_id} className="border-b border-gray-100">
-                    <td className="py-1 pr-2 font-medium">{p.player_name}</td>
-                    <td className="py-1 pr-2 text-gray-500">{p.state || '-'}</td>
-                    <td className="py-1 pr-2 text-gray-500">{p.district || '-'}</td>
-                    <td className="py-1 pr-2">
+          <BracketList>
+            {players.map((p, i) => (
+              <BracketRow key={p.player_id} number={i + 1} dotColor={p.sendToBye ? 'bg-status-pending' : 'bg-accent-green'}>
+                <div className="flex flex-1 items-center justify-between gap-2 text-sm">
+                  <div>
+                    <span className="font-medium text-ink">{p.player_name}</span>
+                    <span className="ml-2 text-xs text-muted">
+                      {[p.state, p.district].filter(Boolean).join(' · ') || '-'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1 text-xs text-muted">
                       <input type="checkbox" checked={p.sendToBye} onChange={() => toggleBye(p.player_id)} />
-                    </td>
-                    <td className="py-1">
-                      <button onClick={() => removePlayer(p.player_id)} className="text-xs text-red-600 underline">
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      BYE
+                    </label>
+                    <button onClick={() => removePlayer(p.player_id)} className="text-xs text-corner-red underline">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </BracketRow>
+            ))}
+          </BracketList>
         )}
-      </section>
+      </Card>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <label className="mb-3 flex flex-col gap-1 text-sm">
+      <Card>
+        <label className="mb-3 flex flex-col gap-1 text-sm text-ink">
           Batch name (optional)
           <input
             value={batchName}
             onChange={(e) => setBatchName(e.target.value)}
             placeholder={categoryLabel() || 'Custom Batch'}
-            className="rounded-lg border border-gray-300 px-3 py-2"
+            className="rounded-md border border-line px-3 py-2"
           />
         </label>
-        {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        {error && <p className="mb-2 text-sm text-corner-red">{error}</p>}
         <button
           onClick={handleCreateBatch}
           disabled={creating || activeCount < 2}
-          className="rounded-lg bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {creating ? 'Creating…' : `Create batch & go to manage (${activeCount} players)`}
         </button>
-      </section>
+      </Card>
     </div>
   );
 }
