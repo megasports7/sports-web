@@ -91,8 +91,25 @@ Built: `src/proxy.ts` (session refresh + redirect via `getClaims()`, role-aware 
 
 Both throwaway accounts were deleted via the Admin API immediately after (HTTP 200 both), and the local file holding their session tokens was removed — nothing test-only was left behind.
 
-### Phase 2 — Player role port
-`coding` ports `player.api.ts` (direct close port, per the API-layer section above) and builds the `app/(player)/...` route group: dashboard, events browse + register, matches, certificates, profile (real `File`/`Blob` photo upload). `reading` independently verifies each ported function's behavior against the mobile original — same RPC calls, same envelope shape, same edge cases (e.g. the duplicate-registration behavior) — not just "the page renders."
+### Phase 2 — Player role port — ✅ backend proven, 2026-09-05 (frontend design pass deliberately deferred)
+`coding` ports `player.api.ts` (direct close port, per the API-layer section above) and builds the `app/player/...` route group: dashboard, events browse + register, matches, certificates, profile (real `File` photo upload). `reading` independently verifies each ported function's behavior against the mobile original — same RPC calls, same envelope shape, same edge cases (e.g. the duplicate-registration behavior) — not just "the page renders."
+
+**Timing decision, this session:** built and proven with plain/default styling only. The visual design pass (mobile's palette/icons adapted to a web layout) is deliberately deferred until after all role backends are proven working — the user's explicit call, to avoid touching each screen twice. Not a scope cut, a sequencing decision.
+
+**Built:** all 7 pages from the screen inventory below, direct in this session (same process-mode choice as Phase 0/1). `src/lib/api/player.api.ts` ports every function 1:1 (`dashboard`, `profile`, `updateProfile`, `uploadPhoto`, `events`, `registerForEvent`/`registerForEventWithCategory`, `matches`, `certificates`, plus `mintCertificateUrl` for the `cert-view` Edge Function). `src/lib/player/registrationCategories.ts` ports the TANDING/SENI category/weight-class data verbatim (business rules, not UI). `next build` and `npm run lint` both pass clean (one genuine lint finding fixed along the way: `react-hooks/set-state-in-effect` on the profile page's initial load, restructured to match the pattern the other 6 pages already used correctly).
+
+**Backend proven, not assumed** — real REST calls against the live Supabase project using two throwaway accounts (`m7-phase2-{organizer,player}-test-*@example.com`, deleted after; **no other account was touched**, per the standing instruction), exercising the exact queries/RPCs `player.api.ts` makes:
+- Organizer creates a throwaway event (`events_insert_organizer` RLS) → player sees it via `events_select_authenticated`, initially unregistered.
+- `register_for_event` RPC succeeds; the event's registration status then correctly shows `pending` via `events()`'s join logic.
+- `dashboard()`'s three aggregation queries (registration count, certificate-position counts, upcoming matches) all succeed against a fresh player (empty/zero is the correct answer, not an error).
+- `profile()` reads correctly; `updateProfile()` persists allowed fields; a self role-escalation attempt is still blocked (unrelated to this phase, re-confirmed as a sanity check).
+- `uploadPhoto()`: a real PNG uploads to the caller's own path (`profile_photos_insert_own`), the path persists to `profiles.photo`, `resolvePhoto()`'s signed-URL mint succeeds for the owner — and, as a negative control, the throwaway *organizer* account cannot mint a signed URL for the player's own photo (the bucket's privacy actually holds, not just assumed).
+- `certificates()` succeeds (empty list, correct for a fresh player).
+- **16/16 checks passed.** Cleanup confirmed by status code, not assumed: registration, event, and photo all deleted (204/200), both throwaway accounts deleted (200).
+
+**Scope of what "proven" means here, stated plainly rather than overclaimed:** this verifies the real Supabase-side data flow every function depends on (RLS, the RPC, Storage, the join logic) via direct REST calls with real sessions — it does not click through the actual rendered React pages in a browser (no browser-automation tool available in this environment), so on-screen interaction/loading-state behavior is unverified. That gap is consistent with — not a shortcut around — the user's own "backend first, frontend pass later" sequencing.
+
+**Not yet done, by design:** the visual design pass (mobile's gradient palette `#00E676`/`#00B0FF`/`#7C4DFF`, role colors, icons, adapted to a web layout) and a real browser click-through. Both deferred to a later, explicitly-scoped pass, once every role's backend is proven the same way.
 
 **Screen inventory** (mobile `src/screens/player/*.tsx` → web route), settled this session:
 
