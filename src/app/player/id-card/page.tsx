@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { playerApi } from '@/lib/api/player.api';
+import { Card } from '@/lib/ui/Card';
 import type { Player } from '@/lib/types';
 
 export default function PlayerIdCardPage() {
@@ -47,8 +48,8 @@ export default function PlayerIdCardPage() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Loading ID card…</p>;
-  if (!player) return <p className="text-red-600">ID card not available.</p>;
+  if (loading) return <p className="text-muted">Loading ID card…</p>;
+  if (!player) return <p className="text-corner-red">ID card not available.</p>;
 
   // player_id (legacy_id) is null for every self-signup player -- fall back
   // to a short slice of the real uuid rather than displaying "#null".
@@ -58,18 +59,18 @@ export default function PlayerIdCardPage() {
     <div className="mx-auto flex max-w-sm flex-col gap-4">
       {/* View-only for v1 -- decided this session, see docs/M7_CONTRACT.md
           Phase 2. No download-as-image; right-click-save or print covers it. */}
-      <section className="rounded-lg border border-gray-200 bg-white p-5">
+      <Card accent="blue" className="p-5">
         <div className="flex items-center gap-4">
           {player.photo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={player.photo} alt="" className="h-16 w-16 rounded-lg object-cover" />
           ) : (
-            <div className="h-16 w-16 rounded-lg bg-gray-100" />
+            <div className="h-16 w-16 rounded-lg bg-bg" />
           )}
           <div>
-            <div className="font-bold">{player.player_name}</div>
-            <div className="text-xs text-gray-500">{idNumber}</div>
-            {player.sport && <div className="text-xs font-medium">{player.sport}</div>}
+            <div className="font-bold text-ink">{player.player_name}</div>
+            <div className="text-xs text-muted">{idNumber}</div>
+            {player.sport && <div className="text-xs font-medium text-accent-blue">{player.sport}</div>}
           </div>
         </div>
 
@@ -77,25 +78,25 @@ export default function PlayerIdCardPage() {
           <div className="mt-4 flex flex-col items-center gap-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qrDataUrl} alt="Player QR code" width={160} height={160} />
-            <span className="text-xs text-gray-400">Scan to verify</span>
+            <span className="text-xs text-muted">Scan to verify</span>
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="mb-2 text-sm font-semibold text-gray-600">Emergency information</h2>
+      <Card className="p-5">
+        <h2 className="mb-2 text-sm font-semibold text-muted">Emergency information</h2>
         <dl className="flex flex-col gap-2 text-sm">
           <Row label="Blood type" value={player.blood_group || 'N/A'} />
           <Row label="Date of birth" value={player.dob || 'N/A'} />
           <Row label="Gender" value={player.gender || 'N/A'} />
           <Row label="Emergency contact" value={player.emergency_contact || 'N/A'} />
         </dl>
-      </section>
+      </Card>
 
-      <button onClick={handleShare} className="rounded-lg border px-3 py-2 text-sm font-medium">
+      <button onClick={handleShare} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
         Share
       </button>
-      {message && <p className="text-sm text-gray-600">{message}</p>}
+      {message && <p className="text-sm text-muted">{message}</p>}
     </div>
   );
 }
@@ -103,8 +104,8 @@ export default function PlayerIdCardPage() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+      <dt className="text-muted">{label}</dt>
+      <dd className="font-medium text-ink">{value}</dd>
     </div>
   );
 }

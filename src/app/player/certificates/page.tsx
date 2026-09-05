@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { playerApi } from '@/lib/api/player.api';
+import { Card } from '@/lib/ui/Card';
 import type { Certificate } from '@/lib/types';
 
 type FilterType = 'all' | 'gold' | 'silver' | 'bronze' | 'participation';
@@ -66,11 +67,11 @@ export default function PlayerCertificatesPage() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Loading certificates…</p>;
+  if (loading) return <p className="text-muted">Loading certificates…</p>;
 
   return (
     <div>
-      <h1 className="mb-4 text-lg font-bold">My certificates ({certs.length})</h1>
+      <h1 className="mb-4 text-lg font-bold text-ink">My certificates ({certs.length})</h1>
 
       <div className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
@@ -78,7 +79,7 @@ export default function PlayerCertificatesPage() {
             key={f}
             onClick={() => setFilter(f)}
             className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${
-              filter === f ? 'border-black bg-black text-white' : 'border-gray-300 text-gray-600'
+              filter === f ? 'border-accent-blue bg-accent-blue text-surface' : 'border-line text-muted'
             }`}
           >
             {f}
@@ -87,41 +88,43 @@ export default function PlayerCertificatesPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          {filter === 'all' ? 'No certificates yet.' : `No ${filter} certificates.`}
-        </p>
+        <p className="text-sm text-muted">{filter === 'all' ? 'No certificates yet.' : `No ${filter} certificates.`}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {filtered.map((c) => (
-            <li key={c.certificate_id} className="rounded-lg border border-gray-200 bg-white p-4">
+            <Card
+              as="li"
+              key={c.certificate_id}
+              accent={c.level === 'gold' ? 'pending' : c.level === 'bronze' ? 'red' : 'none'}
+            >
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-semibold">{c.event_name || 'Event certificate'}</div>
-                  <div className="text-xs uppercase text-gray-500">{c.level || c.certificate_type || 'Participation'}</div>
+                  <div className="font-semibold text-ink">{c.event_name || 'Event certificate'}</div>
+                  <div className="text-xs uppercase text-muted">{c.level || c.certificate_type || 'Participation'}</div>
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <button
                     onClick={() => handleView(c)}
                     disabled={busyId === c.certificate_id}
-                    className="rounded-lg border px-2 py-1 text-xs font-medium disabled:opacity-50"
+                    className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
                   >
                     View
                   </button>
                   <button
                     onClick={() => handleShare(c)}
                     disabled={busyId === c.certificate_id}
-                    className="rounded-lg border px-2 py-1 text-xs font-medium disabled:opacity-50"
+                    className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
                   >
                     Share
                   </button>
                 </div>
               </div>
-            </li>
+            </Card>
           ))}
         </ul>
       )}
 
-      {message && <p className="mt-3 text-sm text-gray-600">{message}</p>}
+      {message && <p className="mt-3 text-sm text-muted">{message}</p>}
     </div>
   );
 }
