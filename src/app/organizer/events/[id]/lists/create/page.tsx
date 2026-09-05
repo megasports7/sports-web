@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
 import type { AttendanceList } from '@/lib/types';
 
@@ -139,12 +140,22 @@ export default function CreateAttendanceListPage({ params }: { params: Promise<{
             <ul className="flex flex-col gap-3">
               {lists.map((l) => (
                 <li key={l.list_id} className="rounded-lg border border-gray-200 bg-white p-4">
-                  <div className="font-semibold">{l.purpose}</div>
-                  <div className="text-sm text-gray-500">{l.mode}</div>
-                  <div className="mt-1 text-xs font-medium text-gray-600">{l.scan_count ?? 0} scans</div>
-                  {l.created_at && (
-                    <div className="text-xs text-gray-400">{new Date(l.created_at).toLocaleDateString()}</div>
-                  )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">{l.purpose}</div>
+                      <div className="text-sm text-gray-500">{l.mode}</div>
+                      <div className="mt-1 text-xs font-medium text-gray-600">{l.scan_count ?? 0} scans</div>
+                      {l.created_at && (
+                        <div className="text-xs text-gray-400">{new Date(l.created_at).toLocaleDateString()}</div>
+                      )}
+                    </div>
+                    <Link
+                      href={`/organizer/lists/${l.list_id}/scan`}
+                      className="shrink-0 rounded-lg bg-black px-3 py-1.5 text-xs font-semibold text-white"
+                    >
+                      Scan
+                    </Link>
+                  </div>
                 </li>
               ))}
             </ul>

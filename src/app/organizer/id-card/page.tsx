@@ -17,9 +17,13 @@ export default function OrganizerIdCardPage() {
         if (res.success && res.data) {
           setOrganizer(res.data);
           // Universal scanner token format used across this codebase --
-          // PLAYER: prefix regardless of the scanned profile's role, matching
-          // what find_player_by_qr/scan_for_list actually parse.
-          const qrValue = `PLAYER:${res.data.organizer_id}`;
+          // PLAYER: prefix regardless of the scanned profile's role. Falls
+          // back to the real uuid when organizer_id (legacy_id) is absent,
+          // same null-safety as the player ID card -- though note neither
+          // find_player_by_qr nor scan_for_list will ever actually resolve
+          // an organizer's own badge (both hard-require role='player'); this
+          // QR is decorative/display-only until that's separately decided.
+          const qrValue = `PLAYER:${res.data.organizer_id ?? res.data.id}`;
           setQrDataUrl(await QRCode.toDataURL(qrValue, { width: 160, margin: 1 }));
         }
       })
@@ -29,7 +33,7 @@ export default function OrganizerIdCardPage() {
   if (loading) return <p className="text-gray-500">Loading ID card…</p>;
   if (!organizer) return <p className="text-red-600">ID card not available.</p>;
 
-  const idNumber = organizer.id_number || `#${organizer.organizer_id}`;
+  const idNumber = organizer.id_number || (organizer.organizer_id ? `#${organizer.organizer_id}` : organizer.id.slice(0, 8));
 
   return (
     <div className="mx-auto flex max-w-sm flex-col gap-4">

@@ -31,7 +31,7 @@ export default function PlayerDashboardPage() {
       <section className="rounded-lg border border-gray-200 bg-white p-4">
         <h1 className="text-lg font-bold">{player.player_name}</h1>
         <p className="text-sm text-gray-500">
-          {player.id_number || player.nsrd_id || `#${player.player_id}`}
+          {player.id_number || player.nsrd_id || (player.player_id ? `#${player.player_id}` : player.id.slice(0, 8))}
           {player.sport ? ` · ${player.sport}` : ''}
         </p>
       </section>

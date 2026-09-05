@@ -26,7 +26,12 @@ export interface ApiResponse<T = unknown> {
 
 // ===================== Player =====================
 export interface Player {
-  player_id: number;
+  // The real, always-present profiles.id uuid -- distinct from player_id
+  // (legacy_id, NULL for every self-signup player). Added 2026-09-05 so the
+  // ID card can encode a working QR code even when there's no legacy_id;
+  // see the qr_resolve_by_uuid migration in sports-mobile-main.
+  id: string;
+  player_id: number | null;
   player_name: string;
   father_name?: string;
   email: string;
@@ -135,7 +140,9 @@ export interface Registration {
 
 // ===================== Organizer =====================
 export interface Organizer {
-  organizer_id: number;
+  // Real, always-present profiles.id uuid -- see Player.id's comment above.
+  id: string;
+  organizer_id: number | null;
   name: string;
   email: string;
   phone?: string;

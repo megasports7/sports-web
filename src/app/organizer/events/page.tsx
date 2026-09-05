@@ -50,7 +50,7 @@ export default function OrganizerEventsPage() {
                 {e.player_count ?? 0} player{e.player_count === 1 ? '' : 's'} registered
               </div>
 
-              <div className="mt-3 flex gap-4 text-sm font-medium">
+              <div className="mt-3 flex flex-wrap gap-4 text-sm font-medium">
                 <Link href={`/organizer/events/${e.event_id}/registrations`} className="underline">
                   Registrations
                 </Link>
@@ -59,6 +59,12 @@ export default function OrganizerEventsPage() {
                 </Link>
                 <Link href={`/organizer/events/${e.event_id}/lists/create`} className="underline">
                   Attendance lists
+                </Link>
+                <Link href={`/organizer/events/${e.event_id}/scan-attendance`} className="underline">
+                  Scan attendance
+                </Link>
+                <Link href={`/organizer/events/${e.event_id}/rapid-mode`} className="underline">
+                  Rapid mode
                 </Link>
               </div>
             </li>

@@ -17,9 +17,15 @@ export default function PlayerIdCardPage() {
       .then(async (res) => {
         if (res.success && res.data) {
           setPlayer(res.data);
-          // M5 Phase 5b format: identity only, matches what
-          // find_player_by_qr/scan_for_list actually parse.
-          const qrValue = `PLAYER:${res.data.player_id}`;
+          // M5 Phase 5b format (PLAYER:<legacy_id>) when a legacy_id exists
+          // -- unchanged, byte-identical to any already-printed card. Every
+          // self-signup player (post-cutover) has legacy_id null, so falls
+          // back to PLAYER:<uuid> instead -- both forms are resolved by the
+          // find_player_by_qr/scan_for_list uuid fallback added 2026-09-05
+          // (sports-mobile-main's qr_resolve_by_uuid migration). Without
+          // this fallback, a self-signup player's QR would encode the
+          // literal broken string "PLAYER:null".
+          const qrValue = `PLAYER:${res.data.player_id ?? res.data.id}`;
           setQrDataUrl(await QRCode.toDataURL(qrValue, { width: 160, margin: 1 }));
         }
       })
@@ -28,7 +34,7 @@ export default function PlayerIdCardPage() {
 
   async function handleShare() {
     if (!player) return;
-    const text = `Player ID: ${player.id_number || player.nsrd_id || player.player_id}\nName: ${player.player_name}\nSport: ${player.sport || 'N/A'}`;
+    const text = `Player ID: ${player.id_number || player.nsrd_id || player.player_id || player.id}\nName: ${player.player_name}\nSport: ${player.sport || 'N/A'}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'My Player ID', text });
@@ -44,7 +50,9 @@ export default function PlayerIdCardPage() {
   if (loading) return <p className="text-gray-500">Loading ID card…</p>;
   if (!player) return <p className="text-red-600">ID card not available.</p>;
 
-  const idNumber = player.id_number || player.nsrd_id || `#${player.player_id}`;
+  // player_id (legacy_id) is null for every self-signup player -- fall back
+  // to a short slice of the real uuid rather than displaying "#null".
+  const idNumber = player.id_number || player.nsrd_id || (player.player_id ? `#${player.player_id}` : player.id.slice(0, 8));
 
   return (
     <div className="mx-auto flex max-w-sm flex-col gap-4">

@@ -2,12 +2,17 @@
  * Direct close port of sports-mobile-main/src/api/organizer.api.ts, per
  * docs/M7_CONTRACT.md's "API layer: direct close port" section.
  *
- * Scope, per the Phase 3 scoping decision: the 10 non-camera organizer
- * screens. Excludes scanAttendance/getPlayerByQR/scanForList/
- * getAttendanceListScans (only used by the 3 deferred QR-scanning screens),
- * and eventRegistrations()/the no-arg batches() overload (both confirmed
- * dead code in the mobile source -- zero live callers -- not ported per the
- * same "don't replicate unused code" principle already applied in Phase 2).
+ * Phase 3 scope: the 10 non-camera organizer screens. Excludes
+ * eventRegistrations()/the no-arg batches() overload (both confirmed dead
+ * code in the mobile source -- zero live callers -- not ported per the same
+ * "don't replicate unused code" principle already applied in Phase 2).
+ *
+ * QR-scanning follow-up phase adds back getPlayerByQR/scanAttendance/
+ * scanForList/getAttendanceListScans (originally deferred alongside the 3
+ * camera-scanning screens). scanAttendance's player-matching logic is
+ * adapted, not byte-ported -- see that function's own comment: mobile
+ * matches by legacy_id, which is NULL for every self-signup player and
+ * would incorrectly treat any two such players as the same one.
  *
  * ID types corrected against the mobile source's own documented asymmetry
  * (see organizer.api.ts's file-header comment): every *_id below that is a
@@ -774,5 +779,113 @@ export const organizerApi = {
     if (data && typeof data.message === 'string') message = data.message;
     else if (error) message = (error as { message?: string }).message || message;
     return { success: false, message };
+  },
+
+  /** Resolves a scanned QR string to a player, scoped to eventId (the caller
+   *  must own that event). Backed by find_player_by_qr, which since the
+   *  2026-09-05 qr_resolve_by_uuid migration tries a real profiles.id uuid
+   *  form first, then the legacy PLAYER:<legacy_id> form -- both are opaque
+   *  to this function, which just forwards qrData and returns whatever the
+   *  RPC resolves. Returned player_id (legacy_id) is null when resolved via
+   *  the uuid branch -- callers must key off `id` (the real uuid), never
+   *  player_id, for any further lookup (see scanAttendance below for why). */
+  async getPlayerByQR(
+    qrData: string,
+    eventId: string,
+  ): Promise<
+    ApiResponse<{ id: string; player_id: number | null; player_name: string; state?: string; district?: string }>
+  > {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('find_player_by_qr', { p_qr_data: qrData, p_event_id: eventId });
+    if (error)
+      return toApiResponse<{
+        id: string;
+        player_id: number | null;
+        player_name: string;
+        state?: string;
+        district?: string;
+      }>({ data: null, error });
+    if (!data?.found) return { success: false, message: 'Player not found' };
+    return { success: true, data };
+  },
+
+  /** Scans a QR code and marks attendance for the resolved player's
+   *  registration on eventId.
+   *
+   *  ADAPTED, not a byte-port of mobile's scanAttendance: mobile matches the
+   *  resolved player to a registration by comparing legacy_id values
+   *  (`regs.data.find(r => r.player_id === playerLegacyId)`). legacy_id is
+   *  NULL for every self-signup player, and in JavaScript `null === null` is
+   *  true -- so that comparison would silently match ANY self-signup
+   *  player's registration to ANY OTHER self-signup player being scanned,
+   *  marking the wrong student present. This looks up the registration
+   *  directly by the resolved player's real uuid instead, which is always
+   *  present and unique regardless of legacy_id. This is a correctness fix
+   *  surfaced while implementing the uuid QR fallback, not a redesign for
+   *  its own sake -- the same latent bug exists in the mobile app today,
+   *  flagged here rather than silently carried into a second codebase. */
+  async scanAttendance(qrData: string, eventId: string): Promise<ApiResponse<void>> {
+    const resolved = await this.getPlayerByQR(qrData, eventId);
+    if (!resolved.success || !resolved.data) {
+      return { success: false, message: resolved.message || 'Player not found' };
+    }
+    const playerUuid = resolved.data.id;
+
+    const supabase = createClient();
+    const { data: regRow, error: regErr } = await supabase
+      .from('registrations')
+      .select('id')
+      .eq('event_id', eventId)
+      .eq('player_id', playerUuid)
+      .maybeSingle();
+    if (regErr) return toApiResponse<void>({ data: undefined, error: regErr });
+    if (!regRow) return { success: false, message: 'Player not registered for this event' };
+
+    return this.markAttendance(regRow.id, eventId);
+  },
+
+  /** Records a QR scan against a specific attendance list. The RPC does all
+   *  QR parsing and player resolution server-side (including the uuid
+   *  fallback) and its own idempotent-insert dance for duplicate scans --
+   *  this just forwards the raw scanned string and translates the RPC's
+   *  {found, recorded, message, player_id, player_name} shape into
+   *  ApiResponse, same translation as mobile's scanForList. player_id in
+   *  the response is legacy_id and may be null (uuid-resolved player); the
+   *  actual dedup key attendance_scans uses is the real uuid, set
+   *  server-side by the RPC, never touched here. */
+  async scanForList(
+    listId: string,
+    qrData: string,
+  ): Promise<ApiResponse<{ player_id: number | null; player_name: string }>> {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('scan_for_list', { p_list_id: listId, p_qr_data: qrData });
+    if (error) return toApiResponse<{ player_id: number | null; player_name: string }>({ data: null, error });
+    if (!data?.found) return { success: false, message: 'Player not found' };
+    if (!data.recorded) {
+      return {
+        success: false,
+        message: data.message || 'Already marked present',
+        data: { player_id: data.player_id, player_name: data.player_name },
+      };
+    }
+    return { success: true, data: { player_id: data.player_id, player_name: data.player_name } };
+  },
+
+  /** Prior scans for a list, so reopening the scan page shows scans made in
+   *  an earlier session, not just the current one. */
+  getAttendanceListScans(
+    listId: string,
+  ): Promise<ApiResponse<{ id: string; player_name: string; scanned_at: string }[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('attendance_scans')
+        .select('id, player_name, scanned_at')
+        .eq('list_id', listId)
+        .order('scanned_at', { ascending: false });
+      if (error)
+        return toApiResponse<{ id: string; player_name: string; scanned_at: string }[]>({ data: null, error });
+      return toApiResponse({ data: data ?? [], error: null });
+    })();
   },
 };
