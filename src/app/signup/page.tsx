@@ -35,7 +35,7 @@ export default function SignupPage() {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <fieldset className="flex gap-2">
-          {(['player', 'organizer'] as const).map((r) => (
+          {(['player', 'organizer', 'referee'] as const).map((r) => (
             <label
               key={r}
               className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm font-medium capitalize ${

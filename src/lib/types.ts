@@ -49,6 +49,9 @@ export interface Player {
   emergency_contact?: string;
   joined_on?: string;
   created_at?: string;
+  // Real profiles.status column -- optional here since no player-facing
+  // screen reads/writes it, but admin's user list does (admin.api.ts).
+  status?: string;
 }
 
 export interface CertificateCounts {
@@ -152,6 +155,8 @@ export interface Organizer {
   id_number?: string;
   id_valid_until?: string;
   created_at?: string;
+  // Real profiles.status column -- see Player.status's comment above.
+  status?: string;
 }
 
 export interface OrganizerDashboardData {
@@ -160,6 +165,7 @@ export interface OrganizerDashboardData {
     total_events: number;
     total_batches: number;
     total_registrations: number;
+    pending_registrations?: number;
     active_today?: number;
   };
   recent_events: Event[];
@@ -196,6 +202,42 @@ export interface Referee {
   phone?: string;
   state?: string;
   district?: string;
+  // Real profiles.status column -- see Player.status's comment above.
+  status?: string;
+}
+
+// ===================== Referee's own profile =====================
+// Distinct from Referee above (organizer's roster-row shape, referee_id
+// there is the real uuid). Here referee_id is legacy_id -- nullable for
+// every self-signup referee, same pattern as Player.player_id/
+// Organizer.organizer_id. `id` is the real uuid, always present.
+export interface RefereeProfile {
+  id: string;
+  referee_id: number | null;
+  name: string;
+  email: string;
+  phone?: string;
+  photo?: string | null;
+  id_number?: string;
+  district?: string;
+  state?: string;
+  id_valid_until?: string;
+  joined_on?: string;
+  blood_group?: string;
+  dob?: string;
+  gender?: string;
+  emergency_contact?: string;
+}
+
+export interface RefereeDashboardData {
+  referee: RefereeProfile;
+  stats: {
+    events_assigned: number;
+    matches_total: number;
+    matches_today: number;
+    upcoming: number;
+  };
+  assigned_events: Event[];
 }
 
 export interface OrganizerMatch {
@@ -211,7 +253,13 @@ export interface OrganizerMatch {
   player1_score?: number;
   player2_score?: number;
   status?: string;
+  scheduled_at?: string;
 }
+
+// referee.api.ts's matches() returns the identical shape (same raw matches
+// row + the same player1_name/player2_name resolution) -- a type alias
+// keeps both call sites semantically named without duplicating the fields.
+export type RefereeMatch = OrganizerMatch;
 
 export interface FilteredPlayer {
   registration_id: string;
@@ -226,6 +274,69 @@ export interface FilteredPlayer {
   weight_category?: string;
   seni_category?: string;
   status?: string;
+}
+
+// ===================== Admin =====================
+// Associate isn't a built role yet (only admin needs to list/manage it) --
+// kept minimal and loose the same way mobile's own admin.api.ts types
+// associates() as `any`, rather than inventing a full role type nothing
+// else in this app uses yet.
+export interface Associate {
+  id: string;
+  associate_id: number | null;
+  name: string;
+  email: string;
+  phone?: string;
+  state?: string;
+  district?: string;
+  status?: string;
+  photo?: string | null;
+}
+
+/** A roster row in an associate's attendance list -- direct mirror of
+ *  mobile's AssociatePlayerRow (associate.api.ts). `id` is the real
+ *  profiles.id uuid and is what markAttendance/list-keying must use;
+ *  `player_id` (legacy_id) is display-only and null for self-signup
+ *  players -- see associate.api.ts's file header for the 2026-09-05 bug
+ *  this distinction fixes in mobile. */
+export interface AssociatePlayer {
+  id: string;
+  player_id: number | null;
+  player_name: string;
+  email: string;
+  phone?: string | null;
+  sport?: string | null;
+  id_number?: string | null;
+  district?: string | null;
+  state?: string | null;
+  present: boolean;
+  absent: boolean;
+  marked_at?: string;
+}
+
+/** The normalized row shape every admin user-list renders to, regardless of
+ *  which role's table it came from -- mirrors mobile's own AdminUserList.tsx
+ *  UserItem interface. `id` is always the real profiles.id uuid (NOT
+ *  legacy_id/player_id -- see admin.api.ts's file header for why keying on
+ *  legacy_id was a live bug for self-signup accounts). */
+export interface AdminUserRow {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  state?: string;
+  district?: string;
+  status?: string;
+}
+
+export interface AdminDashboardData {
+  total_players: number;
+  total_organizers: number;
+  total_referees: number;
+  total_associates: number;
+  total_events: number;
+  recent_players: Player[];
+  recent_events: Event[];
 }
 
 export interface AttendanceList {

@@ -127,7 +127,12 @@ export const playerApi = {
         supabase.from('certificates').select('position').eq('player_id', uid),
         supabase
           .from('matches')
-          .select('*')
+          // events(event_name): matches has no event_name/opponent_name column
+          // of its own (checked the schema directly -- see matches() below for
+          // the same fix) -- event_id is a direct FK to events, and
+          // events_select_authenticated already lets any signed-in player read
+          // it, so this embed resolves without a second round trip.
+          .select('*, events(event_name)')
           .or(`player1_id.eq.${uid},player2_id.eq.${uid}`)
           .neq('status', 'completed')
           .order('scheduled_at', { ascending: true })
@@ -165,11 +170,13 @@ export const playerApi = {
 
       const upcomingMatches: Match[] = matches.map((m: Record<string, unknown>) => {
         const opponentId = (m.player1_id === uid ? m.player2_id : m.player1_id) as string | undefined;
+        const eventRel = m.events as { event_name?: string } | null | undefined;
         return {
           ...m,
           match_id: m.id,
           opponent_id: opponentId,
           opponent_name: opponentId ? nameById.get(opponentId) : undefined,
+          event_name: eventRel?.event_name,
         } as Match;
       });
 
@@ -295,13 +302,58 @@ export const playerApi = {
     return callRegisterForEvent(createClient(), data);
   },
 
+  /** A real, previously-invisible gap found while wiring this page's redesign,
+   *  not a byte-port of a byte-port: mobile's own `matches()` has the exact
+   *  same `select('*')`, and `matches` genuinely has no `event_name` or
+   *  `opponent_name` column at all (checked
+   *  sports-mobile-main/supabase/migrations/20260825120500_matches.sql
+   *  directly) -- both fields were silently `undefined` on every row, on
+   *  mobile and here, before this fix. `batches` has no player-facing SELECT
+   *  policy (only owner/referee/admin), so the reliable path to a real event
+   *  name is the direct `event_id` FK to `events`, which
+   *  `events_select_authenticated` already lets any player read -- same fix
+   *  already applied to dashboard()'s upcoming_matches above. Opponent name
+   *  resolves via the identical batch-profile-lookup dashboard() already
+   *  proved. Still open, deliberately not touched here: `player1_score`/
+   *  `player2_score` are typed on `Match` but have no backing column either
+   *  (scores live on `match_results.score_side1/2`, joined via
+   *  `matches.result_id` -- see M7_CONTRACT.md Phase 4's notes) -- a related
+   *  but separate gap, flagged rather than folded into this fix. */
   matches(): Promise<ApiResponse<Match[]>> {
     return (async () => {
       const supabase = createClient();
-      const { data, error } = await supabase.from('matches').select('*').order('scheduled_at', { ascending: true });
+      const uid = await getUid(supabase);
+      const { data, error } = await supabase
+        .from('matches')
+        .select('*, events(event_name)')
+        .order('scheduled_at', { ascending: true });
       if (error) return toApiResponse<Match[]>({ data: null, error });
+
+      const rows = data ?? [];
+      const opponentIds = Array.from(
+        new Set(
+          rows
+            .map((m: Record<string, unknown>) => (m.player1_id === uid ? m.player2_id : m.player1_id))
+            .filter((id): id is string => !!id),
+        ),
+      );
+      const { data: opponents } = opponentIds.length
+        ? await supabase.from('profiles').select('id, name').in('id', opponentIds)
+        : { data: [] as { id: string; name: string }[] };
+      const nameById = new Map((opponents ?? []).map((o) => [o.id, o.name]));
+
       return toApiResponse({
-        data: (data ?? []).map((m: Record<string, unknown>) => ({ ...m, match_id: m.id }) as Match),
+        data: rows.map((m: Record<string, unknown>) => {
+          const opponentId = (m.player1_id === uid ? m.player2_id : m.player1_id) as string | undefined;
+          const eventRel = m.events as { event_name?: string } | null | undefined;
+          return {
+            ...m,
+            match_id: m.id,
+            opponent_id: opponentId,
+            opponent_name: opponentId ? nameById.get(opponentId) : undefined,
+            event_name: eventRel?.event_name,
+          } as Match;
+        }),
         error: null,
       });
     })();

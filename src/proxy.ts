@@ -67,21 +67,31 @@ export async function proxy(request: NextRequest) {
   // actually stops a player from reading/writing organizer-owned rows
   // (independently proven from a generic HTTP client in M5 Phase 9); this
   // redirect just sends someone to the area their role actually has.
+  //
+  // A lookup table, not a growing chain of if-blocks -- adding referee here
+  // (and admin/associate later) is one line, not a new hand-copied branch
+  // that has to remember to redirect every *other* existing role away too.
+  const ROLE_HOME: Record<string, string> = {
+    player: '/player',
+    organizer: '/organizer',
+    referee: '/referee',
+    admin: '/admin',
+    associate: '/associate',
+  };
+  const homeFor = (r: string | undefined) => (r && ROLE_HOME[r]) || '/login';
+
   const { pathname } = request.nextUrl;
   if (pathname === '/') {
     const url = request.nextUrl.clone();
-    url.pathname = role === 'organizer' ? '/organizer' : '/player';
+    url.pathname = homeFor(role);
     return NextResponse.redirect(url);
   }
-  if (pathname.startsWith('/organizer') && role !== 'organizer') {
-    const url = request.nextUrl.clone();
-    url.pathname = role === 'player' ? '/player' : '/login';
-    return NextResponse.redirect(url);
-  }
-  if (pathname.startsWith('/player') && role !== 'player') {
-    const url = request.nextUrl.clone();
-    url.pathname = role === 'organizer' ? '/organizer' : '/login';
-    return NextResponse.redirect(url);
+  for (const roleName of Object.keys(ROLE_HOME)) {
+    if (pathname.startsWith(`/${roleName}`) && role !== roleName) {
+      const url = request.nextUrl.clone();
+      url.pathname = homeFor(role);
+      return NextResponse.redirect(url);
+    }
   }
 
   // Must return this exact response object -- it carries the refreshed

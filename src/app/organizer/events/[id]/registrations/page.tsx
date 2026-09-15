@@ -2,7 +2,6 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
-import { StatusBadge } from '@/lib/ui/StatusBadge';
 import type { Registration } from '@/lib/types';
 
 /** TANDING rows carry event_category ('TANDING') + age_category +
@@ -16,6 +15,42 @@ function categoryLabel(r: Registration): string {
   return [r.event_category, r.age_category, r.weight_category].filter(Boolean).join(' · ') || '-';
 }
 
+function StatusPill({ status }: { status: string }) {
+  return <span className={`pill pill-${status}`}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>;
+}
+
+function Actions({
+  r,
+  busy,
+  onApprove,
+  onReject,
+  onAttend,
+  block,
+}: {
+  r: Registration;
+  busy: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onAttend: () => void;
+  block?: boolean;
+}) {
+  return (
+    <div className={`actions ${block ? 'actions-block' : ''}`}>
+      <button className="btn-approve" disabled={busy || r.status === 'approved'} onClick={onApprove}>
+        Approve
+      </button>
+      <button className="btn-reject" disabled={busy || r.status === 'rejected'} onClick={onReject}>
+        Reject
+      </button>
+      {r.attendance_status !== 'present' && (
+        <button className="btn-attend" disabled={busy} onClick={onAttend}>
+          Mark attendance
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function OrganizerEventRegistrationsPage({ params }: { params: Promise<{ id: string }> }) {
   // id is the event's real uuid (the URL path param) -- NOT a number. Passed
   // through as a plain string end to end, per the Number(event_id)-on-a-uuid
@@ -23,10 +58,11 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
   const { id } = use(params);
 
   const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [eventName, setEventName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   async function refresh() {
     const res = await organizerApi.registrations(id);
@@ -40,118 +76,386 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
 
   // Inlined directly (not via refresh()) for the same react-hooks/
   // set-state-in-effect reason as lists/create/page.tsx -- refresh() stays
-  // available for post-action refetches from event handlers.
+  // available for post-action refetches from event handlers. The event-name
+  // lookup rides along in the same Promise.all rather than a second effect.
   useEffect(() => {
-    organizerApi
-      .registrations(id)
-      .then((res) => {
-        if (res.success && res.data) {
-          setRegistrations(res.data);
+    Promise.all([organizerApi.registrations(id), organizerApi.event(id)])
+      .then(([regsRes, eventRes]) => {
+        if (regsRes.success && regsRes.data) {
+          setRegistrations(regsRes.data);
           setLoadError(null);
         } else {
-          setLoadError(res.message || 'Could not load registrations');
+          setLoadError(regsRes.message || 'Could not load registrations');
         }
+        if (eventRes.success && eventRes.data) setEventName(eventRes.data.event_name);
       })
       .finally(() => setLoading(false));
   }, [id]);
 
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2200);
+  }
+
   async function handleStatus(registrationId: string, status: 'approved' | 'rejected') {
     setBusyId(registrationId);
-    setActionMessage(null);
     const res = await organizerApi.updateRegistrationStatus(registrationId, status, id);
     setBusyId(null);
     if (res.success) {
-      setActionMessage(status === 'approved' ? 'Registration approved.' : 'Registration rejected.');
+      showToast(status === 'approved' ? 'Registration approved' : 'Registration rejected');
       refresh();
     } else {
-      setActionMessage(res.message || 'Update failed');
+      showToast(res.message || 'Update failed');
     }
   }
 
   async function handleAttendance(registrationId: string) {
     setBusyId(registrationId);
-    setActionMessage(null);
     const res = await organizerApi.markAttendance(registrationId, id);
     setBusyId(null);
     if (res.success) {
-      setActionMessage('Attendance marked.');
+      showToast('Attendance marked');
       refresh();
     } else {
-      setActionMessage(res.message || 'Could not mark attendance');
+      showToast(res.message || 'Could not mark attendance');
     }
   }
 
   if (loading) return <p className="text-muted">Loading registrations…</p>;
   if (loadError) return <p className="text-corner-red">{loadError}</p>;
 
-  return (
-    <div>
-      <h1 className="mb-4 text-lg font-bold text-ink">Registrations</h1>
+  const approvedCount = registrations.filter((r) => r.status === 'approved').length;
+  const pendingCount = registrations.filter((r) => r.status === 'pending' || !r.status).length;
+  const rejectedCount = registrations.filter((r) => r.status === 'rejected').length;
 
-      {actionMessage && <p className="mb-3 text-sm text-muted">{actionMessage}</p>}
+  return (
+    <div className="page">
+      <div className="head">
+        <h1>Registrations</h1>
+        {eventName && <p className="event-name">{eventName}</p>}
+        {registrations.length > 0 && (
+          <p className="summary">
+            {registrations.length} total · {approvedCount} approved · {pendingCount} pending · {rejectedCount} rejected
+          </p>
+        )}
+      </div>
 
       {registrations.length === 0 ? (
-        <p className="text-sm text-muted">No registrations yet.</p>
+        <p className="text-muted">No registrations yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-line bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-line text-left text-xs text-muted">
-                <th className="px-4 py-2 font-medium">Player</th>
-                <th className="px-4 py-2 font-medium">Category</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 font-medium">Attendance</th>
-                <th className="px-4 py-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {registrations.map((r) => {
-                const busy = busyId === r.registration_id;
-                return (
-                  <tr key={r.registration_id} className="border-b border-line last:border-0">
-                    <td className="px-4 py-2">
-                      <div className="font-medium text-ink">{r.player_name || 'Unknown'}</div>
-                      {r.email && <div className="text-xs text-muted">{r.email}</div>}
-                    </td>
-                    <td className="px-4 py-2 text-muted">{categoryLabel(r)}</td>
-                    <td className="px-4 py-2">
-                      <StatusBadge status={r.status || 'pending'} />
-                    </td>
-                    <td className="px-4 py-2">{r.attendance_status === 'present' && <StatusBadge status="present" />}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => handleStatus(r.registration_id, 'approved')}
-                          disabled={busy || r.status === 'approved'}
-                          className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleStatus(r.registration_id, 'rejected')}
-                          disabled={busy || r.status === 'rejected'}
-                          className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                        {r.attendance_status !== 'present' && (
-                          <button
-                            onClick={() => handleAttendance(r.registration_id)}
-                            disabled={busy}
-                            className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
-                          >
-                            Mark attendance
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="table-wrap">
+            <table>
+              <colgroup>
+                <col className="c-player" />
+                <col className="c-cat" />
+                <col className="c-status" />
+                <col className="c-attend" />
+                <col className="c-actions" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th>Category</th>
+                  <th>Status</th>
+                  <th>Attendance</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registrations.map((r) => {
+                  const busy = busyId === r.registration_id;
+                  return (
+                    <tr key={r.registration_id}>
+                      <td>
+                        <div className="p-name">{r.player_name || 'Unknown'}</div>
+                        {r.email && <div className="p-email">{r.email}</div>}
+                      </td>
+                      <td className="cat">{categoryLabel(r)}</td>
+                      <td>
+                        <StatusPill status={r.status || 'pending'} />
+                      </td>
+                      <td>{r.attendance_status === 'present' ? <StatusPill status="present" /> : <span className="dash">—</span>}</td>
+                      <td>
+                        <Actions
+                          r={r}
+                          busy={busy}
+                          onApprove={() => handleStatus(r.registration_id, 'approved')}
+                          onReject={() => handleStatus(r.registration_id, 'rejected')}
+                          onAttend={() => handleAttendance(r.registration_id)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="reg-cards">
+            {registrations.map((r) => {
+              const busy = busyId === r.registration_id;
+              return (
+                <div className="reg-card" key={r.registration_id}>
+                  <div className="p-name">{r.player_name || 'Unknown'}</div>
+                  {r.email && <div className="p-email">{r.email}</div>}
+                  <div className="reg-card-meta">
+                    <span className="cat">{categoryLabel(r)}</span>
+                    <span className="pill-row">
+                      <StatusPill status={r.status || 'pending'} />
+                      {r.attendance_status === 'present' && <StatusPill status="present" />}
+                    </span>
+                  </div>
+                  <Actions
+                    r={r}
+                    busy={busy}
+                    block
+                    onApprove={() => handleStatus(r.registration_id, 'approved')}
+                    onReject={() => handleStatus(r.registration_id, 'rejected')}
+                    onAttend={() => handleAttendance(r.registration_id)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
+
+      {toast && <div className="toast">{toast}</div>}
+
+      <style jsx>{`
+        .page {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .head h1 {
+          font-size: 26px;
+          font-weight: 800;
+          letter-spacing: -0.3px;
+          margin: 0;
+        }
+        .head .event-name {
+          margin: 5px 0 0;
+          font-size: 15px;
+          color: var(--color-accent-green);
+          font-weight: 700;
+        }
+        .head .summary {
+          margin: 4px 0 0;
+          font-size: 13px;
+          color: #3a3d45;
+        }
+
+        .table-wrap {
+          background: var(--color-surface);
+          border: 1px solid rgba(22, 24, 29, 0.05);
+          border-radius: 18px;
+          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -14px rgba(22, 24, 29, 0.16);
+          overflow: hidden;
+        }
+        table {
+          width: 100%;
+          table-layout: fixed;
+          border-collapse: collapse;
+          font-size: 13.5px;
+        }
+        col.c-player {
+          width: 26%;
+        }
+        col.c-cat {
+          width: 23%;
+        }
+        col.c-status {
+          width: 12%;
+        }
+        col.c-attend {
+          width: 12%;
+        }
+        col.c-actions {
+          width: 27%;
+        }
+        thead th {
+          text-align: left;
+          font-size: 11.5px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+          color: var(--color-muted);
+          padding: 14px 18px;
+          border-bottom: 1px solid var(--color-line);
+        }
+        tbody td {
+          padding: 13px 18px;
+          border-bottom: 1px solid var(--color-line);
+          vertical-align: middle;
+          overflow-wrap: anywhere;
+        }
+        tbody tr:last-child td {
+          border-bottom: none;
+        }
+        tbody tr:hover {
+          background: color-mix(in srgb, var(--color-accent-green) 3%, transparent);
+        }
+        .p-name {
+          font-weight: 700;
+          font-size: 14px;
+        }
+        .p-email {
+          font-size: 12px;
+          color: var(--color-muted);
+          margin-top: 1px;
+        }
+        .cat {
+          color: #3a3d45;
+          font-weight: 500;
+          font-size: 13px;
+        }
+        .dash {
+          color: #c9c6bf;
+        }
+
+        :global(.pill) {
+          display: inline-block;
+          font-size: 11.5px;
+          font-weight: 700;
+          padding: 3px 10px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        :global(.pill-approved) {
+          background: color-mix(in srgb, var(--color-accent-green) 14%, transparent);
+          color: #0a7a3d;
+        }
+        :global(.pill-pending) {
+          background: color-mix(in srgb, var(--color-status-pending) 18%, transparent);
+          color: #8a6a10;
+        }
+        :global(.pill-rejected) {
+          background: color-mix(in srgb, var(--color-corner-red) 13%, transparent);
+          color: #c23f26;
+        }
+        :global(.pill-present) {
+          background: color-mix(in srgb, var(--color-accent-blue) 14%, transparent);
+          color: #0072b0;
+        }
+
+        /* Buttons: solid-bordered, medium-light fills clearly deeper/richer
+           than the pale status pills above (not the same tint at a
+           glance), squarer corners than the pills' full capsule shape, a
+           real shadow, and a scale-down + darken on press so both mouse
+           clicks and phone taps get a genuine "something happened" moment. */
+        :global(.actions) {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          max-width: 100%;
+        }
+        :global(.actions button) {
+          border-radius: 9px;
+          padding: 8px 14px;
+          font-size: 12.5px;
+          font-weight: 700;
+          cursor: pointer;
+          font-family: inherit;
+          border: 1.5px solid transparent;
+          box-shadow: 0 1px 3px rgba(22, 24, 29, 0.12);
+          transition: transform 0.08s ease, filter 0.1s ease, box-shadow 0.12s ease;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+        }
+        :global(.btn-approve) {
+          background: #7dcb9a;
+          color: #0f5c33;
+          border-color: #4fae73;
+        }
+        :global(.btn-reject) {
+          background: #f3a688;
+          color: #8a3018;
+          border-color: #e8845e;
+        }
+        :global(.btn-attend) {
+          background: #7fb8e0;
+          color: #0d4a73;
+          border-color: #4e96c9;
+        }
+        :global(.actions button:not(:disabled):hover) {
+          filter: brightness(0.97);
+          box-shadow: 0 3px 7px -2px rgba(22, 24, 29, 0.18);
+          transform: translateY(-1px);
+        }
+        :global(.actions button:not(:disabled):active) {
+          transform: scale(0.94) translateY(0);
+          filter: brightness(0.93);
+          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.1);
+          transition: transform 0.04s ease, filter 0.04s ease;
+        }
+        :global(.actions button:disabled) {
+          background: #eeece7;
+          color: #b3afa6;
+          border-color: #eeece7;
+          box-shadow: none;
+          cursor: default;
+        }
+
+        .reg-cards {
+          display: none;
+        }
+
+        .toast {
+          position: fixed;
+          left: 50%;
+          bottom: 26px;
+          transform: translateX(-50%);
+          background: var(--color-ink);
+          color: #fff;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 11px 18px;
+          border-radius: 12px;
+          box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.4);
+          z-index: 50;
+        }
+
+        @media (max-width: 640px) {
+          .table-wrap {
+            display: none;
+          }
+          .reg-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+          }
+          .reg-card {
+            background: var(--color-surface);
+            border: 1px solid rgba(22, 24, 29, 0.05);
+            border-radius: 16px;
+            padding: 14px 16px;
+            box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -14px rgba(22, 24, 29, 0.16);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+          .reg-card-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+          }
+          .pill-row {
+            display: flex;
+            gap: 6px;
+          }
+          :global(.actions-block) {
+            flex-direction: column;
+          }
+          :global(.actions-block button) {
+            width: 100%;
+            padding: 10px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -185,12 +185,26 @@ export const organizerApi = {
       const supabase = createClient();
       const uid = await getUid(supabase);
 
-      const [profileRes, eventsCountRes, batchesCountRes, registrationsCountRes, recentEventsRes, allEventsRes] =
+      const [profileRes, eventsCountRes, batchesCountRes, registrationsCountRes, pendingRegistrationsRes, recentEventsRes, allEventsRes] =
         await Promise.all([
           supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
           supabase.from('events').select('*', { count: 'exact', head: true }).eq('organizer_id', uid),
           supabase.from('batches').select('*', { count: 'exact', head: true }).eq('organizer_id', uid),
-          supabase.from('registrations').select('id', { count: 'exact', head: true }),
+          // Was missing the organizer scope entirely -- counted every
+          // organizer's registrations, not just this one's. Found while
+          // adding the pending-count query right below it; fixed the same
+          // way, joining through events to filter on the embedded
+          // organizer_id (the same embedded-select pattern player.api.ts
+          // already uses against this table).
+          supabase
+            .from('registrations')
+            .select('id, events!inner(organizer_id)', { count: 'exact', head: true })
+            .eq('events.organizer_id', uid),
+          supabase
+            .from('registrations')
+            .select('id, events!inner(organizer_id)', { count: 'exact', head: true })
+            .eq('events.organizer_id', uid)
+            .eq('status', 'pending'),
           supabase
             .from('events')
             .select('*')
@@ -229,6 +243,24 @@ export const organizerApi = {
         activeToday = activeSet.size;
       }
 
+      // recentEventsRes is a plain `select('*')` on events -- it carries no
+      // player_count (that's only ever computed in events() below, via its
+      // own separate registrations-count-by-event query). Dashboard's old
+      // Card never displayed player_count, so this was invisible; the
+      // redesign surfaces a real "N Registered" badge per row, which would
+      // otherwise always read 0 regardless of the event's real registration
+      // count. Fixed by running the same by-event count, scoped to just
+      // these 5 recent events.
+      const recentEvents = recentEventsRes.data ?? [];
+      const recentEventIds = recentEvents.map((e) => e.id);
+      const recentCountByEvent = new Map<string, number>();
+      if (recentEventIds.length) {
+        const { data: recentRegs } = await supabase.from('registrations').select('event_id').in('event_id', recentEventIds);
+        for (const r of recentRegs ?? []) {
+          recentCountByEvent.set(r.event_id, (recentCountByEvent.get(r.event_id) ?? 0) + 1);
+        }
+      }
+
       const organizer = mapOrganizerRow(profileRes.data as Record<string, unknown>)!;
       return toApiResponse({
         data: {
@@ -237,9 +269,10 @@ export const organizerApi = {
             total_events: eventsCountRes.count ?? 0,
             total_batches: batchesCountRes.count ?? 0,
             total_registrations: registrationsCountRes.count ?? 0,
+            pending_registrations: pendingRegistrationsRes.count ?? 0,
             active_today: activeToday,
           },
-          recent_events: (recentEventsRes.data ?? []).map((e) => mapEventRow(e)),
+          recent_events: recentEvents.map((e) => ({ ...mapEventRow(e), player_count: recentCountByEvent.get(e.id) ?? 0 })),
         },
         error: null,
       });
@@ -325,6 +358,20 @@ export const organizerApi = {
         data: events.map((e) => ({ ...mapEventRow(e), player_count: countByEvent.get(e.id) ?? 0 })),
         error: null,
       });
+    })();
+  },
+
+  /** Single-event lookup -- e.g. a sub-page's header that needs to say which
+   *  event it's for without fetching every one of the organizer's events
+   *  just to find this one. No equivalent existed before this; events()
+   *  only ever returned the full list. */
+  event(eventId: string): Promise<ApiResponse<Event>> {
+    return (async () => {
+      const supabase = createClient();
+      const uid = await getUid(supabase);
+      const { data, error } = await supabase.from('events').select('*').eq('id', eventId).eq('organizer_id', uid).maybeSingle();
+      if (error || !data) return toApiResponse<Event>({ data: null, error: error ?? { message: 'Event not found' } });
+      return toApiResponse({ data: mapEventRow(data), error: null });
     })();
   },
 
@@ -523,14 +570,29 @@ export const organizerApi = {
     })();
   },
 
-  /** Deliberately deferred, per the M5 contract's own decision (ranking rule
-   *  and generation timing remain open product calls). No network call at
-   *  all -- ported as-is, same message. */
-  generateCertificates(): Promise<ApiResponse<unknown>> {
-    return Promise.resolve({
-      success: false,
-      message: 'Certificate generation is not yet available on the new backend — pending a product decision.',
-    });
+  /** Live, per docs/PRE_M6_CERTIFICATES_CONTRACT.md §3/§5 (Phase 3b): wired
+   *  to the `issue_batch_certificates` RPC, which derives tier (gold/silver/
+   *  bronze/participation), event_id, and the roster server-side from
+   *  p_batch_id -- nothing else is trusted from the client. Every other RPC
+   *  parameter (p_cert_title, p_cert_date, p_cert_template, p_sign_name,
+   *  p_sign_designation, p_sign2_name, p_sign2_designation) is omitted here
+   *  and defaults to null server-side -- deliberate per the contract's §5/
+   *  Decision #7 "ship with nulls for now" call (web has no certificate-
+   *  designer form yet), not an oversight. */
+  generateCertificates(batchId: string): Promise<ApiResponse<{ created: number; skipped: number }>> {
+    return (async () => {
+      if (!batchId) {
+        return { success: false, message: 'A batch must be selected to generate certificates' };
+      }
+      const supabase = createClient();
+      const { data: result, error } = await supabase.rpc('issue_batch_certificates', { p_batch_id: batchId });
+      if (error) return toApiResponse<{ created: number; skipped: number }>({ data: null, error });
+      return {
+        success: true,
+        data: { created: result.created, skipped: result.skipped },
+        message: `${result.created} certificate(s) issued${result.skipped ? `, ${result.skipped} already existed` : ''}`,
+      };
+    })();
   },
 
   getCertificates(eventId: string, batchId?: string): Promise<ApiResponse<Record<string, unknown>[]>> {
@@ -616,6 +678,19 @@ export const organizerApi = {
       const byesRequired = nextPow2 - n;
 
       return toApiResponse({ data: { players, total: players.length, byes_required: byesRequired }, error: null });
+    })();
+  },
+
+  /** Single-list lookup by id -- e.g. the scan page's header, which only
+   *  ever has the list id from the URL, not the event id needed to call
+   *  getAttendanceLists(eventId) and filter client-side. Same shape as
+   *  event() above. */
+  attendanceList(listId: string): Promise<ApiResponse<AttendanceList>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from('attendance_lists').select('*, scan_count').eq('id', listId).maybeSingle();
+      if (error || !data) return toApiResponse<AttendanceList>({ data: null, error: error ?? { message: 'List not found' } });
+      return toApiResponse({ data: { ...data, list_id: data.id }, error: null });
     })();
   },
 
@@ -804,6 +879,66 @@ export const organizerApi = {
         player_name: string;
         state?: string;
         district?: string;
+      }>({ data: null, error });
+    if (!data?.found) return { success: false, message: 'Player not found' };
+    return { success: true, data };
+  },
+
+  /** Rapid Mode On-Spot Registration
+   *  (sports-mobile-main/docs/RAPID_MODE_ONSPOT_CONTRACT.md). This page
+   *  already passed eventId to getPlayerByQR (unlike mobile's own
+   *  RapidMode.tsx, which never did), but hit the identical underlying wall:
+   *  find_player_by_qr requires the scanned player already be REGISTERED for
+   *  eventId, which contradicts "On-spot" walk-up registration entirely --
+   *  every unregistered walk-up player was silently rejected. Backed by
+   *  onspot_register_by_qr, which registers the player for eventId instead
+   *  of requiring they already be registered. QR-format notes on
+   *  getPlayerByQR above apply identically here (same parsing, same RPC
+   *  family). `registered_now` is true when this call just created (or
+   *  re-registered) the row; `rejected_pending_confirmation` is true when
+   *  the player's only existing registration for this event was rejected --
+   *  nothing was written, re-call with acceptRejected=true to re-register
+   *  them, or leave it and skip. */
+  async onSpotRegisterByQR(
+    eventId: string,
+    qrData: string,
+    categories: {
+      event_category?: string;
+      age_category?: string;
+      weight_category?: string;
+      seni_category?: string;
+    },
+    acceptRejected = false,
+  ): Promise<
+    ApiResponse<{
+      id: string;
+      player_id: number | null;
+      player_name: string;
+      state?: string;
+      district?: string;
+      registered_now: boolean;
+      rejected_pending_confirmation: boolean;
+    }>
+  > {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('onspot_register_by_qr', {
+      p_event_id: eventId,
+      p_qr_data: qrData,
+      p_event_category: categories.event_category ?? null,
+      p_age_category: categories.age_category ?? null,
+      p_weight_category: categories.weight_category ?? null,
+      p_seni_category: categories.seni_category ?? null,
+      p_accept_rejected: acceptRejected,
+    });
+    if (error)
+      return toApiResponse<{
+        id: string;
+        player_id: number | null;
+        player_name: string;
+        state?: string;
+        district?: string;
+        registered_now: boolean;
+        rejected_pending_confirmation: boolean;
       }>({ data: null, error });
     if (!data?.found) return { success: false, message: 'Player not found' };
     return { success: true, data };

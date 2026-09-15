@@ -2,19 +2,10 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
-import { Card } from '@/lib/ui/Card';
-import { StatusBadge } from '@/lib/ui/StatusBadge';
-import { BracketList, BracketRow } from '@/lib/ui/Bracket';
 import type { Batch, BatchPlayer, OrganizerMatch, Referee } from '@/lib/types';
 
 type Panel = { matchId: string; type: 'record' | 'advance' | 'replace' };
 type ActionMessage = { matchId: string; text: string; error?: boolean };
-
-const DOT_COLOR: Record<string, string> = {
-  scheduled: 'bg-muted',
-  in_progress: 'bg-accent-blue',
-  completed: 'bg-accent-green',
-};
 
 export default function BatchManagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -28,7 +19,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
 
   const [selectedRefereeId, setSelectedRefereeId] = useState('');
   const [savingReferee, setSavingReferee] = useState(false);
-  const [refereeMessage, setRefereeMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const [panel, setPanel] = useState<Panel | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,6 +58,11 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     });
   }, [id]);
 
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2200);
+  }
+
   async function refreshMatches() {
     const res = await organizerApi.batchMatches(id);
     if (res.success && res.data) setMatches(res.data);
@@ -80,16 +76,15 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     }
   }
 
-  async function handleSaveReferee() {
+  async function handleConfirmReferee() {
     setSavingReferee(true);
-    setRefereeMessage(null);
     const res = await organizerApi.assignReferee(id, selectedRefereeId || null);
     setSavingReferee(false);
     if (res.success) {
-      setRefereeMessage('Referee updated.');
+      showToast('Referee confirmed');
       refreshBatch();
     } else {
-      setRefereeMessage(res.message || 'Could not update referee');
+      showToast(res.message || 'Could not update referee');
     }
   }
 
@@ -202,22 +197,19 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   if (!batch) return <p className="text-corner-red">Batch not found.</p>;
 
   const rounds = Array.from(new Set(matches.map((m) => m.round_number ?? 0))).sort((a, b) => a - b);
+  const refereeChanged = selectedRefereeId !== (batch.referee_id ?? '');
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-bold text-ink">{batch.batch_name}</h1>
-        {batch.category && <p className="text-sm text-muted">{batch.category}</p>}
+    <div className="page">
+      <div className="head">
+        <h1>{batch.batch_name}</h1>
+        {batch.category && <p>{batch.category}</p>}
       </div>
 
-      <Card>
-        <h2 className="mb-2 text-sm font-semibold text-muted">Referee</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={selectedRefereeId}
-            onChange={(e) => setSelectedRefereeId(e.target.value)}
-            className="rounded-md border border-line px-3 py-2 text-sm"
-          >
+      <div className="card">
+        <h2>Referee</h2>
+        <div className="ref-row">
+          <select value={selectedRefereeId} onChange={(e) => setSelectedRefereeId(e.target.value)}>
             <option value="">Unassigned</option>
             {referees.map((r) => (
               <option key={r.referee_id} value={r.referee_id}>
@@ -225,239 +217,552 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
               </option>
             ))}
           </select>
-          <button
-            onClick={handleSaveReferee}
-            disabled={savingReferee}
-            className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
-          >
-            {savingReferee ? 'Saving…' : 'Save'}
+          <button className="btn-confirm" onClick={handleConfirmReferee} disabled={!refereeChanged || savingReferee}>
+            {savingReferee ? 'Saving…' : 'Confirm'}
           </button>
         </div>
-        {refereeMessage && <p className="mt-2 text-sm text-muted">{refereeMessage}</p>}
-      </Card>
+      </div>
 
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-muted">Matches</h2>
-        {matches.length === 0 ? (
-          <p className="text-sm text-muted">No matches yet.</p>
-        ) : (
-          <div className="flex flex-col gap-5">
-            {rounds.map((round) => (
-              <Card key={round}>
-                <h3 className="mb-3 text-xs font-semibold uppercase text-muted">Round {round}</h3>
-                <BracketList>
-                  {matches
-                    .filter((m) => (m.round_number ?? 0) === round)
-                    .map((match, i) => {
-                      const canStart = match.status === 'scheduled' && !!match.player1_id && !!match.player2_id;
-                      const canRecord = match.status === 'scheduled' || match.status === 'in_progress';
-                      const canReopen = match.status === 'completed';
-                      const canAdvance = match.status !== 'completed';
-                      const canReplace = match.status !== 'completed';
-                      const eligibleReplacements = players.filter(
-                        (p) => p.player_id !== match.player1_id && p.player_id !== match.player2_id,
-                      );
-                      const w = winnerName(match);
-                      const isPanelHere = panel?.matchId === match.match_id;
+      {matches.length === 0 ? (
+        <p className="text-muted">No matches yet.</p>
+      ) : (
+        rounds.map((round) => (
+          <div className="card round-card" key={round}>
+            <p className="round-title">Round {round}</p>
+            <div className="bracket">
+              {matches
+                .filter((m) => (m.round_number ?? 0) === round)
+                .map((match, i) => {
+                  const canStart = match.status === 'scheduled' && !!match.player1_id && !!match.player2_id;
+                  const canRecord = match.status === 'scheduled' || match.status === 'in_progress';
+                  const canReopen = match.status === 'completed';
+                  const canAdvance = match.status !== 'completed';
+                  const canReplace = match.status !== 'completed';
+                  const eligibleReplacements = players.filter((p) => p.player_id !== match.player1_id && p.player_id !== match.player2_id);
+                  const w = winnerName(match);
+                  const isPanelHere = panel?.matchId === match.match_id;
+                  const status = match.status ?? 'scheduled';
 
-                      return (
-                        <div key={match.match_id} className="flex flex-col gap-2">
-                          <BracketRow number={i + 1} dotColor={DOT_COLOR[match.status ?? ''] ?? 'bg-muted'}>
-                            <div className="flex flex-1 items-center justify-between gap-3 text-sm">
-                              <span className="font-medium text-ink">
-                                {match.player1_name ?? 'TBD'}
-                                {match.player1_score !== undefined && match.player2_score !== undefined && (
-                                  <span className="ml-2 font-mono text-xs font-bold text-ink">
-                                    {match.player1_score}–{match.player2_score}
-                                  </span>
-                                )}
-                                <span className="mx-2 text-xs text-muted">vs</span>
-                                {match.player2_name ?? 'TBD'}
-                              </span>
-                              <StatusBadge status={match.status ?? 'scheduled'} />
-                            </div>
-                          </BracketRow>
-                          {w && <div className="pl-7 text-xs text-muted">Winner: {w}</div>}
+                  return (
+                    <div className="match" key={match.match_id}>
+                      <span className={`match-num ${status === 'in_progress' ? 'dot-live' : status === 'completed' ? 'dot-done' : ''}`}>
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <div className="match-row">
+                        <span className="match-players">
+                          {match.player1_name ?? 'TBD'}
+                          {match.player1_score !== undefined && match.player2_score !== undefined && (
+                            <span className="score">
+                              {match.player1_score}–{match.player2_score}
+                            </span>
+                          )}
+                          <span className="vs">vs</span>
+                          {match.player2_name ?? 'TBD'}
+                        </span>
+                        <span className={`pill pill-${status}`}>{status === 'in_progress' ? 'In progress' : status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                      </div>
+                      {w && <div className="winner-note">Winner: {w}</div>}
 
-                          <div className="flex flex-wrap gap-2 pl-7">
-                            {canStart && (
-                              <button onClick={() => handleStart(match)} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50">
-                                Start
-                              </button>
-                            )}
-                            {canRecord && (
-                              <button
-                                onClick={() => (isPanelHere && panel?.type === 'record' ? closePanel() : openPanel(match.match_id, 'record'))}
-                                disabled={busy}
-                                className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
-                              >
-                                Record result
-                              </button>
-                            )}
-                            {canReopen && (
-                              <button onClick={() => handleReopen(match)} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50">
-                                Reopen
-                              </button>
-                            )}
-                            {canAdvance && (
-                              <button
-                                onClick={() => (isPanelHere && panel?.type === 'advance' ? closePanel() : openPanel(match.match_id, 'advance'))}
-                                disabled={busy}
-                                className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
-                              >
-                                Force advance
-                              </button>
-                            )}
-                            {canReplace && (
-                              <button
-                                onClick={() => (isPanelHere && panel?.type === 'replace' ? closePanel() : openPanel(match.match_id, 'replace'))}
-                                disabled={busy}
-                                className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink disabled:opacity-50"
-                              >
-                                Replace participant
-                              </button>
-                            )}
+                      <div className="actions">
+                        {canStart && (
+                          <button className="btn-action-primary" onClick={() => handleStart(match)} disabled={busy}>
+                            Start
+                          </button>
+                        )}
+                        {canRecord && (
+                          <button
+                            className="btn-action-primary"
+                            onClick={() => (isPanelHere && panel?.type === 'record' ? closePanel() : openPanel(match.match_id, 'record'))}
+                            disabled={busy}
+                          >
+                            Record result
+                          </button>
+                        )}
+                        {canReopen && (
+                          <button className="chip" onClick={() => handleReopen(match)} disabled={busy}>
+                            Reopen
+                          </button>
+                        )}
+                        {canAdvance && (
+                          <button
+                            className="chip"
+                            onClick={() => (isPanelHere && panel?.type === 'advance' ? closePanel() : openPanel(match.match_id, 'advance'))}
+                            disabled={busy}
+                          >
+                            Force advance
+                          </button>
+                        )}
+                        {canReplace && (
+                          <button
+                            className="chip"
+                            onClick={() => (isPanelHere && panel?.type === 'replace' ? closePanel() : openPanel(match.match_id, 'replace'))}
+                            disabled={busy}
+                          >
+                            Replace participant
+                          </button>
+                        )}
+                      </div>
+
+                      {isPanelHere && panel?.type === 'record' && (
+                        <div className="panel">
+                          <div className="player-score-row">
+                            <label className="radio-row">
+                              <input
+                                type="radio"
+                                name={`record-winner-${match.match_id}`}
+                                checked={!!match.player1_id && recordWinnerId === match.player1_id}
+                                onChange={() => setRecordWinnerId(match.player1_id ?? '')}
+                              />
+                              {match.player1_name ?? 'TBD'}
+                            </label>
+                            <input
+                              type="number"
+                              className="score-input"
+                              placeholder="Score"
+                              value={recordScore1}
+                              onChange={(e) => setRecordScore1(e.target.value)}
+                            />
                           </div>
-
-                          {isPanelHere && panel?.type === 'record' && (
-                            <div className="ml-7 flex flex-col gap-2 rounded-md border border-line bg-bg p-3">
-                              <div className="flex flex-col gap-1 text-sm text-ink">
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="radio"
-                                    name={`record-winner-${match.match_id}`}
-                                    checked={!!match.player1_id && recordWinnerId === match.player1_id}
-                                    onChange={() => setRecordWinnerId(match.player1_id ?? '')}
-                                  />
-                                  {match.player1_name ?? 'TBD'}
-                                </label>
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="radio"
-                                    name={`record-winner-${match.match_id}`}
-                                    checked={!!match.player2_id && recordWinnerId === match.player2_id}
-                                    onChange={() => setRecordWinnerId(match.player2_id ?? '')}
-                                  />
-                                  {match.player2_name ?? 'TBD'}
-                                </label>
-                              </div>
-                              <div className="flex gap-2">
-                                <input
-                                  type="number"
-                                  placeholder="Player 1 score"
-                                  value={recordScore1}
-                                  onChange={(e) => setRecordScore1(e.target.value)}
-                                  className="w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
-                                />
-                                <input
-                                  type="number"
-                                  placeholder="Player 2 score"
-                                  value={recordScore2}
-                                  onChange={(e) => setRecordScore2(e.target.value)}
-                                  className="w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
-                                />
-                              </div>
-                              <div className="flex gap-2">
-                                <button onClick={() => submitRecord(match)} disabled={busy} className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50">
-                                  Submit
-                                </button>
-                                <button onClick={closePanel} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {isPanelHere && panel?.type === 'advance' && (
-                            <div className="ml-7 flex flex-col gap-2 rounded-md border border-line bg-bg p-3">
-                              <div className="flex flex-col gap-1 text-sm text-ink">
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="radio"
-                                    name={`advance-winner-${match.match_id}`}
-                                    checked={!!match.player1_id && advanceWinnerId === match.player1_id}
-                                    onChange={() => setAdvanceWinnerId(match.player1_id ?? '')}
-                                  />
-                                  {match.player1_name ?? 'TBD'}
-                                </label>
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="radio"
-                                    name={`advance-winner-${match.match_id}`}
-                                    checked={!!match.player2_id && advanceWinnerId === match.player2_id}
-                                    onChange={() => setAdvanceWinnerId(match.player2_id ?? '')}
-                                  />
-                                  {match.player2_name ?? 'TBD'}
-                                </label>
-                              </div>
-                              <div className="flex gap-2">
-                                <button onClick={() => submitAdvance(match)} disabled={busy} className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50">
-                                  Confirm
-                                </button>
-                                <button onClick={closePanel} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {isPanelHere && panel?.type === 'replace' && (
-                            <div className="ml-7 flex flex-col gap-2 rounded-md border border-line bg-bg p-3">
-                              <div className="flex flex-col gap-1 text-sm text-ink">
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="radio"
-                                    name={`replace-old-${match.match_id}`}
-                                    checked={!!match.player1_id && replaceOldId === match.player1_id}
-                                    onChange={() => setReplaceOldId(match.player1_id ?? '')}
-                                  />
-                                  Replace {match.player1_name ?? 'TBD'}
-                                </label>
-                                <label className="flex items-center gap-2">
-                                  <input
-                                    type="radio"
-                                    name={`replace-old-${match.match_id}`}
-                                    checked={!!match.player2_id && replaceOldId === match.player2_id}
-                                    onChange={() => setReplaceOldId(match.player2_id ?? '')}
-                                  />
-                                  Replace {match.player2_name ?? 'TBD'}
-                                </label>
-                              </div>
-                              <select
-                                value={replaceNewId}
-                                onChange={(e) => setReplaceNewId(e.target.value)}
-                                className="rounded-md border border-line px-3 py-2 text-sm"
-                              >
-                                <option value="">Select replacement</option>
-                                {eligibleReplacements.map((p) => (
-                                  <option key={p.player_id} value={p.player_id}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </select>
-                              <div className="flex gap-2">
-                                <button onClick={() => submitReplace(match)} disabled={busy} className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50">
-                                  Confirm
-                                </button>
-                                <button onClick={closePanel} className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink">
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {actionMessage?.matchId === match.match_id && (
-                            <p className={`ml-7 text-sm ${actionMessage.error ? 'text-corner-red' : 'text-muted'}`}>{actionMessage.text}</p>
-                          )}
+                          <div className="player-score-row">
+                            <label className="radio-row">
+                              <input
+                                type="radio"
+                                name={`record-winner-${match.match_id}`}
+                                checked={!!match.player2_id && recordWinnerId === match.player2_id}
+                                onChange={() => setRecordWinnerId(match.player2_id ?? '')}
+                              />
+                              {match.player2_name ?? 'TBD'}
+                            </label>
+                            <input
+                              type="number"
+                              className="score-input"
+                              placeholder="Score"
+                              value={recordScore2}
+                              onChange={(e) => setRecordScore2(e.target.value)}
+                            />
+                          </div>
+                          <div className="panel-actions">
+                            <button className="btn-submit" onClick={() => submitRecord(match)} disabled={busy}>
+                              Submit
+                            </button>
+                            <button className="btn-cancel" onClick={closePanel}>
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                      );
-                    })}
-                </BracketList>
-              </Card>
-            ))}
+                      )}
+
+                      {isPanelHere && panel?.type === 'advance' && (
+                        <div className="panel">
+                          <label className="radio-row">
+                            <input
+                              type="radio"
+                              name={`advance-winner-${match.match_id}`}
+                              checked={!!match.player1_id && advanceWinnerId === match.player1_id}
+                              onChange={() => setAdvanceWinnerId(match.player1_id ?? '')}
+                            />
+                            {match.player1_name ?? 'TBD'}
+                          </label>
+                          <label className="radio-row">
+                            <input
+                              type="radio"
+                              name={`advance-winner-${match.match_id}`}
+                              checked={!!match.player2_id && advanceWinnerId === match.player2_id}
+                              onChange={() => setAdvanceWinnerId(match.player2_id ?? '')}
+                            />
+                            {match.player2_name ?? 'TBD'}
+                          </label>
+                          <div className="panel-actions">
+                            <button className="btn-submit" onClick={() => submitAdvance(match)} disabled={busy}>
+                              Confirm
+                            </button>
+                            <button className="btn-cancel" onClick={closePanel}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {isPanelHere && panel?.type === 'replace' && (
+                        <div className="panel">
+                          <label className="radio-row">
+                            <input
+                              type="radio"
+                              name={`replace-old-${match.match_id}`}
+                              checked={!!match.player1_id && replaceOldId === match.player1_id}
+                              onChange={() => setReplaceOldId(match.player1_id ?? '')}
+                            />
+                            Replace {match.player1_name ?? 'TBD'}
+                          </label>
+                          <label className="radio-row">
+                            <input
+                              type="radio"
+                              name={`replace-old-${match.match_id}`}
+                              checked={!!match.player2_id && replaceOldId === match.player2_id}
+                              onChange={() => setReplaceOldId(match.player2_id ?? '')}
+                            />
+                            Replace {match.player2_name ?? 'TBD'}
+                          </label>
+                          <select className="replace-select" value={replaceNewId} onChange={(e) => setReplaceNewId(e.target.value)}>
+                            <option value="">Select replacement</option>
+                            {eligibleReplacements.map((p) => (
+                              <option key={p.player_id} value={p.player_id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="panel-actions">
+                            <button className="btn-submit" onClick={() => submitReplace(match)} disabled={busy}>
+                              Confirm
+                            </button>
+                            <button className="btn-cancel" onClick={closePanel}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {actionMessage?.matchId === match.match_id && <p className={`msg ${actionMessage.error ? 'err' : 'ok'}`}>{actionMessage.text}</p>}
+                    </div>
+                  );
+                })}
+            </div>
           </div>
-        )}
-      </section>
+        ))
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
+
+      <style jsx>{`
+        .page {
+          max-width: 840px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .head h1 {
+          font-size: 24px;
+          font-weight: 800;
+          letter-spacing: -0.3px;
+          margin: 0;
+        }
+        .head p {
+          margin: 5px 0 0;
+          font-size: 14px;
+          color: var(--color-accent-green);
+          font-weight: 700;
+        }
+
+        .card {
+          background: var(--color-surface);
+          border: 1px solid rgba(22, 24, 29, 0.05);
+          border-radius: 18px;
+          padding: 18px 20px;
+          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -14px rgba(22, 24, 29, 0.16);
+        }
+        .card h2 {
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+          color: #3a3d45;
+          margin: 0 0 12px;
+        }
+
+        .ref-row {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          max-width: 420px;
+        }
+        .ref-row select {
+          flex: 1;
+          min-width: 160px;
+          border: 1.5px solid var(--color-line);
+          border-radius: 10px;
+          padding: 9px 10px;
+          font-size: 13.5px;
+          font-family: inherit;
+          color: var(--color-ink);
+          background: var(--color-surface);
+        }
+        .btn-confirm {
+          flex-shrink: 0;
+          border: none;
+          border-radius: 10px;
+          padding: 9px 18px;
+          font-size: 13px;
+          font-weight: 700;
+          color: #fff;
+          cursor: pointer;
+          font-family: inherit;
+          background: linear-gradient(120deg, var(--color-accent-green), #00e676);
+          box-shadow: 0 4px 10px -6px color-mix(in srgb, var(--color-accent-green) 50%, transparent);
+        }
+        .btn-confirm:disabled {
+          background: #eeece7;
+          color: #b3afa6;
+          box-shadow: none;
+          cursor: default;
+        }
+
+        .round-title {
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+          color: var(--color-muted);
+          margin: 0 0 14px;
+        }
+        .bracket {
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          gap: 18px;
+          padding-left: 22px;
+        }
+        .bracket::before {
+          content: '';
+          position: absolute;
+          left: 7px;
+          top: 6px;
+          bottom: 24px;
+          width: 1px;
+          background: var(--color-line);
+        }
+        .match {
+          position: relative;
+        }
+        .match-num {
+          position: absolute;
+          left: -22px;
+          top: 1px;
+          width: 15px;
+          height: 15px;
+          border-radius: 50%;
+          background: var(--color-surface);
+          border: 1.5px solid var(--color-line);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 8px;
+          font-weight: 700;
+          color: var(--color-muted);
+          font-family: var(--font-mono);
+        }
+        .match-num.dot-live {
+          border-color: var(--color-accent-blue);
+          color: var(--color-accent-blue);
+        }
+        .match-num.dot-done {
+          border-color: var(--color-accent-green);
+          color: var(--color-accent-green);
+          background: color-mix(in srgb, var(--color-accent-green) 10%, transparent);
+        }
+        .match-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .match-players {
+          font-size: 14px;
+          font-weight: 600;
+        }
+        .match-players .score {
+          font-family: var(--font-mono);
+          font-weight: 800;
+          margin: 0 6px;
+        }
+        .match-players .vs {
+          color: var(--color-muted);
+          font-weight: 500;
+          margin: 0 6px;
+          font-size: 12.5px;
+        }
+        .pill {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 3px 9px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .pill-scheduled {
+          background: color-mix(in srgb, var(--color-muted) 16%, transparent);
+          color: var(--color-muted);
+        }
+        .pill-in_progress {
+          background: color-mix(in srgb, var(--color-accent-blue) 14%, transparent);
+          color: #0072b0;
+        }
+        .pill-completed {
+          background: color-mix(in srgb, var(--color-accent-green) 14%, transparent);
+          color: #0a7a3d;
+        }
+        .winner-note {
+          font-size: 12px;
+          color: var(--color-muted);
+          margin-top: 4px;
+        }
+
+        .actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+          margin-top: 8px;
+        }
+        .btn-action-primary {
+          border: none;
+          border-radius: 9px;
+          padding: 7px 14px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #fff;
+          cursor: pointer;
+          font-family: inherit;
+          background: linear-gradient(120deg, var(--color-accent-green), #00e676);
+          box-shadow: 0 3px 8px -4px color-mix(in srgb, var(--color-accent-green) 50%, transparent);
+        }
+        .btn-action-primary:disabled {
+          opacity: 0.6;
+          cursor: default;
+        }
+        .chip {
+          border: 1.5px solid var(--color-line);
+          background: var(--color-bg);
+          border-radius: 9px;
+          padding: 7px 13px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #3a3d45;
+          cursor: pointer;
+          font-family: inherit;
+        }
+        .chip:hover:not(:disabled) {
+          border-color: var(--color-accent-green);
+          color: var(--color-accent-green);
+        }
+        .chip:disabled {
+          opacity: 0.6;
+          cursor: default;
+        }
+
+        .panel {
+          margin-top: 10px;
+          background: var(--color-bg);
+          border: 1px solid var(--color-line);
+          border-radius: 12px;
+          padding: 12px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .radio-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .radio-row input {
+          accent-color: var(--color-accent-green);
+          width: 15px;
+          height: 15px;
+          flex-shrink: 0;
+        }
+        .player-score-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+        }
+        .player-score-row .radio-row {
+          flex: 1;
+          min-width: 0;
+        }
+        .score-input {
+          width: 80px;
+          flex-shrink: 0;
+          border: 1.5px solid var(--color-line);
+          border-radius: 9px;
+          padding: 7px 9px;
+          font-family: var(--font-mono);
+          font-size: 13px;
+          text-align: center;
+        }
+        .replace-select {
+          border: 1.5px solid var(--color-line);
+          border-radius: 9px;
+          padding: 7px 9px;
+          font-size: 13px;
+          font-family: inherit;
+          background: var(--color-surface);
+        }
+        .panel-actions {
+          display: flex;
+          gap: 8px;
+        }
+        .btn-submit {
+          border: none;
+          border-radius: 9px;
+          padding: 8px 16px;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #fff;
+          cursor: pointer;
+          font-family: inherit;
+          background: linear-gradient(120deg, var(--color-accent-green), #00e676);
+        }
+        .btn-submit:disabled {
+          opacity: 0.6;
+          cursor: default;
+        }
+        .btn-cancel {
+          border: 1.5px solid var(--color-line);
+          background: var(--color-surface);
+          border-radius: 9px;
+          padding: 8px 16px;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #3a3d45;
+          cursor: pointer;
+          font-family: inherit;
+        }
+        .msg {
+          font-size: 12px;
+          margin-top: 6px;
+        }
+        .msg.ok {
+          color: var(--color-muted);
+        }
+        .msg.err {
+          color: var(--color-corner-red);
+        }
+
+        .toast {
+          position: fixed;
+          left: 50%;
+          bottom: 26px;
+          transform: translateX(-50%);
+          background: var(--color-ink);
+          color: #fff;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 11px 18px;
+          border-radius: 12px;
+          box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.4);
+          z-index: 50;
+        }
+
+        @media (max-width: 600px) {
+          .page {
+            gap: 16px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

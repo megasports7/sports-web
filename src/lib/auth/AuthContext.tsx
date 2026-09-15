@@ -12,6 +12,7 @@
  * the session in cookies on its own.
  */
 import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '../supabase/client';
 import { authApi } from '../api/auth.api';
 import type { User, UserRole } from '../types';
@@ -53,6 +54,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   // Same guard as mobile: signIn/signUp below drive their own
   // role-check-then-dispatch flow, so the listener shouldn't double-handle
@@ -159,9 +161,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           manualFlowRef.current = false;
         }
         dispatch({ type: 'SIGN_OUT' });
+        // Every Nav's button just calls signOut() and stops there -- nothing
+        // else was navigating away, so the protected page stayed mounted
+        // showing whatever it last fetched (its data is its own useEffect
+        // state, unrelated to this context) until a manual refresh forced a
+        // fresh request through proxy.ts, the only place that re-checks the
+        // session. Fixed here, once, rather than in every Nav: unlike
+        // signIn's role-dependent redirect (which stays the caller's job,
+        // see login/page.tsx), sign-out always goes to the same place.
+        router.push('/login');
       },
     }),
-    [state, supabase],
+    [state, supabase, router],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -2,11 +2,12 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
-import { Card } from '@/lib/ui/Card';
 import type { Batch } from '@/lib/types';
 
 export default function OrganizerCertificatesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
+
+  const [eventName, setEventName] = useState<string | null>(null);
 
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loadingBatches, setLoadingBatches] = useState(true);
@@ -14,14 +15,23 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
   const [selectedBatchId, setSelectedBatchId] = useState('');
 
   const [certificates, setCertificates] = useState<Record<string, unknown>[]>([]);
+  // Never actually flips to true below (see the effect's own comment) --
+  // preserved as-is from the proven backend build rather than "fixed", since
+  // that's a deliberate trade-off, not an oversight.
   const [loadingCerts, setLoadingCerts] = useState(false);
   const [certsError, setCertsError] = useState<string | null>(null);
 
   const [viewBusyId, setViewBusyId] = useState<string | null>(null);
-  const [viewMessage, setViewMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    organizerApi.event(eventId).then((res) => {
+      if (res.success && res.data) setEventName(res.data.event_name);
+    });
+  }, [eventId]);
 
   useEffect(() => {
     organizerApi
@@ -54,25 +64,29 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
       .finally(() => setLoadingCerts(false));
   }, [eventId, selectedBatchId]);
 
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2200);
+  }
+
   async function handleView(cert: Record<string, unknown>) {
     const rawId = cert.cert_id ?? cert.certificate_id;
     if (!rawId) return;
     const certId = String(rawId);
     setViewBusyId(certId);
-    setViewMessage(null);
     const res = await organizerApi.mintCertificateUrl(certId);
     setViewBusyId(null);
     if (res.success && res.data) {
       window.open(res.data.url, '_blank', 'noopener,noreferrer');
     } else {
-      setViewMessage(res.message || 'Could not open certificate');
+      showToast(res.message || 'Could not open certificate');
     }
   }
 
   async function handleGenerate() {
     setGenerating(true);
     setGenerateMessage(null);
-    const res = await organizerApi.generateCertificates();
+    const res = await organizerApi.generateCertificates(selectedBatchId);
     setGenerating(false);
     setGenerateMessage(res.message || (res.success ? 'Done.' : 'Could not generate certificates.'));
   }
@@ -80,43 +94,35 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
   if (loadingBatches) return <p className="text-muted">Loading batches…</p>;
 
   return (
-    <div>
-      <h1 className="mb-4 text-lg font-bold text-ink">Certificates</h1>
+    <div className="page">
+      <div className="head">
+        <h1>Certificates</h1>
+        {eventName && <p>{eventName}</p>}
+      </div>
 
-      {batchesError ? (
-        <p className="mb-4 text-corner-red">{batchesError}</p>
-      ) : batches.length === 0 ? (
-        <p className="mb-4 text-sm text-muted">No batches for this event yet.</p>
-      ) : (
-        <div className="mb-4 flex flex-col gap-1">
-          <label htmlFor="batch-select" className="text-sm font-medium text-muted">
-            Batch
+      <div className="card">
+        {batchesError ? (
+          <p className="text-corner-red">{batchesError}</p>
+        ) : batches.length === 0 ? (
+          <p className="text-muted">No batches for this event yet.</p>
+        ) : (
+          <label className="field">
+            <span>Batch</span>
+            <select value={selectedBatchId} onChange={(e) => setSelectedBatchId(e.target.value)}>
+              <option value="">Select a batch…</option>
+              {batches.map((b) => (
+                <option key={b.batch_id} value={b.batch_id}>
+                  {b.batch_name}
+                </option>
+              ))}
+            </select>
           </label>
-          <select
-            id="batch-select"
-            value={selectedBatchId}
-            onChange={(e) => setSelectedBatchId(e.target.value)}
-            className="rounded-md border border-line px-3 py-2"
-          >
-            <option value="">Select a batch…</option>
-            {batches.map((b) => (
-              <option key={b.batch_id} value={b.batch_id}>
-                {b.batch_name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+        )}
 
-      <div className="mb-4">
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink disabled:opacity-50"
-        >
+        <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating || !selectedBatchId}>
           {generating ? 'Generating…' : 'Generate certificates'}
         </button>
-        {generateMessage && <p className="mt-2 text-sm text-muted">{generateMessage}</p>}
+        {generateMessage && <div className="pending-note">{generateMessage}</div>}
       </div>
 
       {selectedBatchId &&
@@ -125,36 +131,198 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
         ) : certsError ? (
           <p className="text-corner-red">{certsError}</p>
         ) : certificates.length === 0 ? (
-          <p className="text-sm text-muted">No certificates for this batch yet.</p>
+          <p className="text-muted">No certificates for this batch yet.</p>
         ) : (
-          <>
-            <ul className="flex flex-col gap-2">
-              {certificates.map((c) => {
-                const certId = String(c.cert_id ?? c.certificate_id ?? '');
-                const playerName = (c.player_name as string) || 'Unknown player';
-                const levelOrPosition = (c.level as string) || (c.position as string) || (c.certificate_type as string) || '-';
-                return (
-                  <Card as="li" key={certId}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="font-semibold text-ink">{playerName}</div>
-                        <div className="text-xs uppercase text-muted">{levelOrPosition}</div>
-                      </div>
-                      <button
-                        onClick={() => handleView(c)}
-                        disabled={viewBusyId === certId}
-                        className="shrink-0 rounded-md border border-line px-2 py-1 text-xs font-medium text-ink disabled:opacity-50"
-                      >
-                        View
-                      </button>
-                    </div>
-                  </Card>
-                );
-              })}
-            </ul>
-            {viewMessage && <p className="mt-3 text-sm text-muted">{viewMessage}</p>}
-          </>
+          <div className="cert-list">
+            {certificates.map((c) => {
+              const certId = String(c.cert_id ?? c.certificate_id ?? '');
+              const playerName = (c.player_name as string) || 'Unknown player';
+              const levelOrPosition = (c.level as string) || (c.position as string) || (c.certificate_type as string) || '-';
+              return (
+                <div className="cert-row" key={certId}>
+                  <div>
+                    <span className="c-name">{playerName}</span>
+                    <span className="c-level">{levelOrPosition}</span>
+                  </div>
+                  <button type="button" className="btn-view" disabled={viewBusyId === certId} onClick={() => handleView(c)}>
+                    {viewBusyId === certId ? 'Opening…' : 'View'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         ))}
+
+      {toast && <div className="toast">{toast}</div>}
+
+      <style jsx>{`
+        .page {
+          max-width: 680px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .head h1 {
+          font-size: 24px;
+          font-weight: 800;
+          letter-spacing: -0.3px;
+          margin: 0;
+        }
+        .head p {
+          margin: 5px 0 0;
+          font-size: 14px;
+          color: #3a3d45;
+        }
+
+        .card {
+          background: var(--color-surface);
+          border: 1px solid rgba(22, 24, 29, 0.05);
+          border-radius: 18px;
+          padding: 18px 20px;
+          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -14px rgba(22, 24, 29, 0.16);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .field span {
+          font-size: 12.5px;
+          font-weight: 600;
+          color: #3a3d45;
+        }
+        .field select {
+          border: 1.5px solid var(--color-line);
+          border-radius: 10px;
+          padding: 9px 10px;
+          font-size: 13.5px;
+          font-family: inherit;
+          color: var(--color-ink);
+          background: var(--color-surface);
+        }
+
+        .btn-secondary {
+          align-self: flex-start;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          border: 1.5px solid var(--color-line);
+          border-radius: 13px;
+          padding: 10px 18px;
+          font-size: 13.5px;
+          font-weight: 700;
+          color: #3a3d45;
+          cursor: pointer;
+          font-family: inherit;
+          background: var(--color-surface);
+          transition: transform 0.08s ease, background 0.12s ease;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+        }
+        .btn-secondary:hover:not(:disabled) {
+          background: var(--color-bg);
+          border-color: #c9c6bf;
+        }
+        .btn-secondary:active:not(:disabled) {
+          transform: scale(0.96);
+          background: #efece6;
+        }
+        .btn-secondary:disabled {
+          opacity: 0.6;
+          cursor: default;
+        }
+
+        .pending-note {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          background: color-mix(in srgb, var(--color-status-pending) 12%, transparent);
+          border: 1px solid color-mix(in srgb, var(--color-status-pending) 30%, transparent);
+          border-radius: 10px;
+          padding: 10px 12px;
+          font-size: 12.5px;
+          font-weight: 500;
+          color: #8a6a10;
+          line-height: 1.5;
+        }
+
+        .cert-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .cert-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          background: var(--color-surface);
+          border: 1px solid rgba(22, 24, 29, 0.05);
+          border-radius: 14px;
+          padding: 13px 16px;
+          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 8px 18px -14px rgba(22, 24, 29, 0.14);
+        }
+        .c-name {
+          display: block;
+          font-size: 14px;
+          font-weight: 700;
+        }
+        .c-level {
+          display: block;
+          font-size: 11.5px;
+          color: var(--color-muted);
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+          margin-top: 2px;
+        }
+        .btn-view {
+          flex-shrink: 0;
+          border: none;
+          border-radius: 10px;
+          padding: 8px 16px;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #fff;
+          cursor: pointer;
+          font-family: inherit;
+          background: linear-gradient(120deg, var(--color-accent-green), #00e676);
+          box-shadow: 0 4px 10px -6px color-mix(in srgb, var(--color-accent-green) 50%, transparent);
+          transition: transform 0.08s ease, filter 0.1s ease;
+          -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+        }
+        .btn-view:hover:not(:disabled) {
+          filter: brightness(1.05);
+        }
+        .btn-view:active:not(:disabled) {
+          transform: scale(0.94);
+          filter: brightness(0.92);
+        }
+        .btn-view:disabled {
+          opacity: 0.6;
+          cursor: default;
+        }
+
+        .toast {
+          position: fixed;
+          left: 50%;
+          bottom: 26px;
+          transform: translateX(-50%);
+          background: var(--color-ink);
+          color: #fff;
+          font-size: 13px;
+          font-weight: 600;
+          padding: 11px 18px;
+          border-radius: 12px;
+          box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.4);
+          z-index: 50;
+        }
+      `}</style>
     </div>
   );
 }

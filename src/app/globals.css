@@ -9,8 +9,14 @@
   --color-accent-blue: #0091EA;
   --color-accent-green: #00C853;
   --color-accent-violet: #6C3CE9;
+  --color-accent-indigo: #3B4CCB;
   --color-corner-red: #E8492D;
   --color-status-pending: #D4A017;
+  --color-role-admin: #7A2E2E;
+  --color-gold: #B8860B;
+  --color-gold-tint: #FFD700;
+  --color-silver: #7C8794;
+  --color-bronze: #B0662E;
 
   --font-sans: var(--font-space-grotesk);
   --font-mono: var(--font-jetbrains-mono);
