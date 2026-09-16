@@ -36,6 +36,8 @@ import type {
   OrganizerMatch,
   FilteredPlayer,
   AttendanceList,
+  ConfiguredEventCategory,
+  ConfiguredEventCategoryInput,
 } from '../types';
 
 function toApiResponse<T>(result: { data: T | null; error: unknown }): ApiResponse<T> {
@@ -372,6 +374,105 @@ export const organizerApi = {
       const { data, error } = await supabase.from('events').select('*').eq('id', eventId).eq('organizer_id', uid).maybeSingle();
       if (error || !data) return toApiResponse<Event>({ data: null, error: error ?? { message: 'Event not found' } });
       return toApiResponse({ data: mapEventRow(data), error: null });
+    })();
+  },
+
+  /** Shared Phase 3 dataset. RLS includes drafts for the event owner and
+   * admins, while players and unrelated accounts see published rows only. */
+  eventCategories(eventId: string): Promise<ApiResponse<ConfiguredEventCategory[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('event_categories')
+        .select('*')
+        .eq('event_id', eventId)
+        .order('competition_type', { ascending: true })
+        .order('age_label', { ascending: true })
+        .order('gender', { ascending: true })
+        .order('code', { ascending: true });
+      return toApiResponse<ConfiguredEventCategory[]>({
+        data: (data ?? null) as ConfiguredEventCategory[] | null,
+        error,
+      });
+    })();
+  },
+
+  createEventCategory(
+    eventId: string,
+    input: ConfiguredEventCategoryInput,
+  ): Promise<ApiResponse<ConfiguredEventCategory>> {
+    return (async () => {
+      const supabase = createClient();
+      const uid = await getUid(supabase);
+      const { data, error } = await supabase
+        .from('event_categories')
+        .insert({ ...input, event_id: eventId, created_by: uid, is_published: false })
+        .select('*')
+        .single();
+      return toApiResponse<ConfiguredEventCategory>({
+        data: (data ?? null) as ConfiguredEventCategory | null,
+        error,
+      });
+    })();
+  },
+
+  /** Direct edits are valid only until a v2 registration references the
+   * category. The database rejects later rule changes and requires cloning. */
+  updateEventCategory(
+    categoryId: string,
+    input: Partial<ConfiguredEventCategoryInput> & { is_published?: boolean },
+  ): Promise<ApiResponse<ConfiguredEventCategory>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('event_categories')
+        .update(input)
+        .eq('id', categoryId)
+        .select('*')
+        .single();
+      return toApiResponse<ConfiguredEventCategory>({
+        data: (data ?? null) as ConfiguredEventCategory | null,
+        error,
+      });
+    })();
+  },
+
+  cloneEventCategory(
+    categoryId: string,
+    input: ConfiguredEventCategoryInput,
+  ): Promise<ApiResponse<ConfiguredEventCategory>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('clone_event_category', {
+        p_category_id: categoryId,
+        p_code: input.code,
+        p_competition_type: input.competition_type,
+        p_age_label: input.age_label,
+        p_minimum_age: input.minimum_age,
+        p_maximum_age: input.maximum_age,
+        p_gender: input.gender,
+        p_weight_rule_mode: input.weight_rule_mode,
+        p_weight_label: input.weight_label,
+        p_minimum_weight_kg: input.minimum_weight_kg,
+        p_maximum_weight_kg: input.maximum_weight_kg,
+        p_seni_category: input.seni_category,
+      });
+      return toApiResponse<ConfiguredEventCategory>({
+        data: (data ?? null) as ConfiguredEventCategory | null,
+        error,
+      });
+    })();
+  },
+
+  /** Generates the one canonical Pencak draft set in Supabase. The RPC locks
+   * the event, refuses duplicates, and never activates configured registration. */
+  createEventCategoriesFromCurrentPencakDefaults(eventId: string): Promise<ApiResponse<number>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('create_event_categories_from_current_pencak_defaults', {
+        p_event_id: eventId,
+      });
+      return toApiResponse<number>({ data: data ?? null, error });
     })();
   },
 

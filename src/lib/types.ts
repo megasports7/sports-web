@@ -96,6 +96,46 @@ export interface Event {
   weight_category?: string | null;
 }
 
+// ===================== Configured event categories =====================
+// This mirrors the mobile Phase 3 category contract. Categories remain
+// configuration-only until later phases explicitly activate v2 registration.
+export type ConfiguredCompetitionType = 'TANDING' | 'SENI';
+export type ConfiguredWeightRuleMode = 'range' | 'measurement_only' | 'not_applicable';
+
+export interface ConfiguredEventCategory {
+  id: string;
+  event_id: string;
+  code: string;
+  competition_type: ConfiguredCompetitionType;
+  age_label: string;
+  minimum_age: number;
+  maximum_age: number | null;
+  gender: 'male' | 'female';
+  weight_rule_mode: ConfiguredWeightRuleMode;
+  weight_label: string | null;
+  minimum_weight_kg: number | null;
+  maximum_weight_kg: number | null;
+  seni_category: string | null;
+  is_published: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface ConfiguredEventCategoryInput {
+  code: string;
+  competition_type: ConfiguredCompetitionType;
+  age_label: string;
+  minimum_age: number;
+  maximum_age: number | null;
+  gender: 'male' | 'female';
+  weight_rule_mode: ConfiguredWeightRuleMode;
+  weight_label: string | null;
+  minimum_weight_kg: number | null;
+  maximum_weight_kg: number | null;
+  seni_category: string | null;
+}
+
 // ===================== Match =====================
 export interface Match {
   match_id: string;

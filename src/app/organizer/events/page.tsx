@@ -49,6 +49,14 @@ function ScanIcon() {
     </svg>
   );
 }
+function CategoryIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M3.5 4.5h7l6 6-6 6-7-7v-5Z" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />
+      <circle cx="7" cy="8" r="1" fill="currentColor" />
+    </svg>
+  );
+}
 
 export default function OrganizerEventsPage() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -125,6 +133,10 @@ export default function OrganizerEventsPage() {
                 <Link href={`/organizer/events/${e.event_id}/scan-attendance`} className="chip">
                   <ScanIcon />
                   Scan attendance
+                </Link>
+                <Link href={`/organizer/events/${e.event_id}/categories`} className="chip">
+                  <CategoryIcon />
+                  Configure categories
                 </Link>
               </div>
             </div>
