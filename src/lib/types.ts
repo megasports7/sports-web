@@ -47,6 +47,11 @@ export interface Player {
   dob?: string;
   blood_group?: string;
   emergency_contact?: string;
+  declared_weight_kg?: number | null;
+  verified_weight_kg?: number | null;
+  weight_verified_at?: string | null;
+  weight_verified_by?: string | null;
+  weight_verified_by_name?: string | null;
   joined_on?: string;
   created_at?: string;
   // Real profiles.status column -- optional here since no player-facing
@@ -135,10 +140,20 @@ export interface Registration {
   weight_category?: string;
   seni_category?: string;
   player_id?: number | null;
+  player_uuid?: string;
   player_name?: string;
   email?: string;
   phone?: string;
+  player_dob?: string | null;
+  player_gender?: string | null;
+  player_district?: string | null;
+  declared_weight_kg?: number | null;
+  verified_weight_kg?: number | null;
+  weight_verified_at?: string | null;
+  weight_verified_by?: string | null;
+  weight_verified_by_name?: string | null;
   attendance_status?: 'present' | null;
+  created_at?: string;
 }
 
 // ===================== Organizer =====================

@@ -119,7 +119,10 @@ export default function PlayerProfilePage() {
 
   function applyProfile(p: Player) {
     setPlayer(p);
-    setForm(Object.fromEntries(FIELDS.map((f) => [f.key, (p[f.key] as string | undefined) ?? ''])));
+    setForm({
+      ...Object.fromEntries(FIELDS.map((f) => [f.key, (p[f.key] as string | undefined) ?? ''])),
+      declared_weight_kg: p.declared_weight_kg?.toString() ?? '',
+    });
   }
 
   async function refresh() {
@@ -142,8 +145,16 @@ export default function PlayerProfilePage() {
   }
 
   async function handleSave() {
+    const declaredWeight = parseWeight(form.declared_weight_kg ?? '');
+    if (declaredWeight === undefined) {
+      showToast('Enter a weight between 0 and 500 kg, or leave it blank');
+      return;
+    }
     setSaving(true);
-    const res = await playerApi.updateProfile(form);
+    const profileFields = Object.fromEntries(
+      Object.entries(form).filter(([key]) => key !== 'declared_weight_kg'),
+    );
+    const res = await playerApi.updateProfile({ ...profileFields, declared_weight_kg: declaredWeight });
     setSaving(false);
     if (res.success) {
       setEditing(false);
@@ -252,6 +263,30 @@ export default function PlayerProfilePage() {
 
         <div className="row">
           <span className="k">
+            <WeightIcon />
+            Declared weight
+          </span>
+          {editing ? (
+            <input
+              type="number"
+              min="0.01"
+              max="500"
+              step="0.01"
+              inputMode="decimal"
+              value={form.declared_weight_kg ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, declared_weight_kg: e.target.value }))}
+              placeholder="kg"
+              aria-label="Declared weight in kilograms"
+            />
+          ) : (
+            <span className={`v ${player.declared_weight_kg == null ? 'muted' : ''}`}>
+              {formatWeight(player.declared_weight_kg)}
+            </span>
+          )}
+        </div>
+
+        <div className="row">
+          <span className="k">
             <CalendarIcon />
             Date of birth
           </span>
@@ -263,6 +298,21 @@ export default function PlayerProfilePage() {
             Gender
           </span>
           <span className="v muted">{player.gender || 'Not set'}</span>
+        </div>
+
+        <div className="weight-verification" aria-label="Weight verification status">
+          <div className="weight-verified-row">
+            <span>Verified weight</span>
+            <strong className={player.verified_weight_kg == null ? 'muted' : ''}>{formatWeight(player.verified_weight_kg)}</strong>
+          </div>
+          {player.weight_verified_at ? (
+            <p>
+              Verified by {player.weight_verified_by_name || 'Organizer'} on {new Date(player.weight_verified_at).toLocaleDateString()}.
+            </p>
+          ) : (
+            <p>Awaiting organizer verification.</p>
+          )}
+          {hasWeightMismatch(player) && <p className="weight-mismatch">Your declared and verified weights are different.</p>}
         </div>
 
         {editing && (
@@ -481,6 +531,37 @@ export default function PlayerProfilePage() {
           border-color: var(--color-accent-blue);
           box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-blue) 14%, transparent);
         }
+        .weight-verification {
+          margin-top: 16px;
+          padding: 13px 14px;
+          border-radius: 12px;
+          background: color-mix(in srgb, var(--color-accent-blue) 6%, var(--color-surface));
+          border: 1px solid color-mix(in srgb, var(--color-accent-blue) 16%, var(--color-line));
+        }
+        .weight-verified-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          color: #3a3d45;
+          font-size: 12.5px;
+        }
+        .weight-verified-row strong {
+          color: var(--color-ink);
+        }
+        .weight-verified-row strong.muted {
+          color: #b7b3aa;
+          font-weight: 600;
+        }
+        .weight-verification p {
+          margin: 7px 0 0;
+          color: var(--color-muted);
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        .weight-verification p.weight-mismatch {
+          color: #b42318;
+          font-weight: 700;
+        }
 
         .card-actions {
           display: flex;
@@ -544,4 +625,31 @@ export default function PlayerProfilePage() {
       `}</style>
     </div>
   );
+}
+
+function WeightIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4 6.2A3.2 3.2 0 0 1 7.2 3h5.6A3.2 3.2 0 0 1 16 6.2v7.6a3.2 3.2 0 0 1-3.2 3.2H7.2A3.2 3.2 0 0 1 4 13.8V6.2Z" stroke="currentColor" strokeWidth={1.4} />
+      <path d="M7 9.5a3 3 0 0 1 6 0" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" />
+      <path d="m10 9.5 1.8-1.2" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function parseWeight(value: string): number | null | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 500 ? parsed : undefined;
+}
+
+function formatWeight(value?: number | null): string {
+  return value == null ? 'Not set' : `${Number(value)} kg`;
+}
+
+function hasWeightMismatch(player: Player): boolean {
+  return player.declared_weight_kg != null
+    && player.verified_weight_kg != null
+    && Number(player.declared_weight_kg) !== Number(player.verified_weight_kg);
 }

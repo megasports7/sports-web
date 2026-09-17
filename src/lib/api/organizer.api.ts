@@ -114,14 +114,27 @@ async function attachRefereeNames(
  *  below, which deliberately expose the real uuid because it flows into
  *  createBatch's uuid[] RPC parameter. attendance_status is synthesized from
  *  the boolean `attendance` column so the UI can key off a string. */
-function mapRegistrationRow(row: Record<string, unknown>, profile?: Record<string, unknown>): Registration {
+function mapRegistrationRow(
+  row: Record<string, unknown>,
+  profile?: Record<string, unknown>,
+  latestWeightAudit?: Record<string, unknown>,
+): Registration {
   return {
     ...row,
     registration_id: row.id,
     player_id: (profile?.legacy_id as number | null) ?? null,
+    player_uuid: (row.player_id as string | undefined) ?? undefined,
     player_name: profile?.name,
     email: profile?.email,
     phone: profile?.phone,
+    player_dob: (profile?.dob as string | null | undefined) ?? null,
+    player_gender: (profile?.gender as string | null | undefined) ?? null,
+    player_district: (profile?.district as string | null | undefined) ?? null,
+    declared_weight_kg: (profile?.declared_weight_kg as number | null | undefined) ?? null,
+    verified_weight_kg: (profile?.verified_weight_kg as number | null | undefined) ?? null,
+    weight_verified_at: (profile?.weight_verified_at as string | null | undefined) ?? null,
+    weight_verified_by: (profile?.weight_verified_by as string | null | undefined) ?? null,
+    weight_verified_by_name: (latestWeightAudit?.verified_by_name as string | null | undefined) ?? null,
     attendance_status: row.attendance ? 'present' : null,
   } as unknown as Registration;
 }
@@ -140,12 +153,34 @@ async function fetchRegistrationsForEvent(
   const regs = data ?? [];
   const playerIds = Array.from(new Set(regs.map((r) => r.player_id).filter(Boolean)));
   const { data: profiles } = playerIds.length
-    ? await supabase.from('profiles').select('id, legacy_id, name, email, phone').in('id', playerIds)
+    ? await supabase
+      .from('profiles')
+      .select('id, legacy_id, name, email, phone, dob, gender, district, declared_weight_kg, verified_weight_kg, weight_verified_at, weight_verified_by')
+      .in('id', playerIds)
     : { data: [] as Record<string, unknown>[] };
   const byId = new Map((profiles ?? []).map((p) => [p.id, p]));
 
+  const { data: weightAudits } = playerIds.length
+    ? await supabase
+      .from('player_weight_audit')
+      .select('player_id, verified_by_name, verified_at')
+      .eq('event_id', eventId)
+      .in('player_id', playerIds)
+      .order('verified_at', { ascending: false })
+    : { data: [] as Record<string, unknown>[] };
+  const latestAuditByPlayer = new Map<string, Record<string, unknown>>();
+  for (const audit of weightAudits ?? []) {
+    const playerId = audit.player_id as string | undefined;
+    const profile = playerId ? byId.get(playerId) : undefined;
+    // Weight is global. An event owner may read only this event's audit rows,
+    // so never attach an older verifier name to a later cross-event update.
+    if (playerId && profile?.weight_verified_at === audit.verified_at && !latestAuditByPlayer.has(playerId)) {
+      latestAuditByPlayer.set(playerId, audit);
+    }
+  }
+
   return toApiResponse({
-    data: regs.map((r) => mapRegistrationRow(r, byId.get(r.player_id))),
+    data: regs.map((r) => mapRegistrationRow(r, byId.get(r.player_id), latestAuditByPlayer.get(r.player_id))),
     error: null,
   });
 }
@@ -427,6 +462,24 @@ export const organizerApi = {
 
   registrations(eventId: string): Promise<ApiResponse<Registration[]>> {
     return fetchRegistrationsForEvent(createClient(), eventId);
+  },
+
+  verifyPlayerWeight(
+    eventId: string,
+    playerId: string,
+    verifiedWeightKg: number,
+    correctionReason: string | null,
+  ): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('verify_player_weight', {
+        p_event_id: eventId,
+        p_player_id: playerId,
+        p_verified_weight_kg: verifiedWeightKg,
+        p_reason: correctionReason,
+      });
+      return toApiResponse<void>({ data: undefined, error });
+    })();
   },
 
   updateRegistrationStatus(
