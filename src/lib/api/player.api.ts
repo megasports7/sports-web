@@ -250,6 +250,15 @@ export const playerApi = {
     })();
   },
 
+  // Demo only (worktree QA): self-verify weight by copying declared → verified
+  demoVerifyWeight(): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('demo_verify_own_weight');
+      return toApiResponse<void>({ data: undefined, error });
+    })();
+  },
+
   /** Web-native: a real File, no FormData/base64 workaround. Path convention
    *  (`${uid}/photo.<ext>`) matches profile_photos_insert_own's RLS check
    *  (first path segment must be the caller's own uid) exactly as mobile. */
