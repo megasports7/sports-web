@@ -476,6 +476,14 @@ export const organizerApi = {
     })();
   },
 
+  activateEventV2(eventId: string): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('activate_event_registration_v2', { p_event_id: eventId });
+      return toApiResponse<void>({ data: undefined, error });
+    })();
+  },
+
   /** banner_image_file (a real File), not banner_image_uri -- the mobile
    *  signature's file://-uri field has no web equivalent; the browser file
    *  input hands back a File directly, which is simpler to upload, not a
@@ -530,6 +538,7 @@ export const organizerApi = {
     return fetchRegistrationsForEvent(createClient(), eventId);
   },
 
+  // Phase 6 audited review — v2 rows must use RPC, legacy v1 also routed via RPC for audit consistency
   updateRegistrationStatus(
     registrationId: string,
     status: 'approved' | 'rejected' | 'pending',
@@ -537,11 +546,36 @@ export const organizerApi = {
   ): Promise<ApiResponse<void>> {
     return (async () => {
       const supabase = createClient();
-      const { error } = await supabase
-        .from('registrations')
-        .update({ status })
-        .eq('id', registrationId)
-        .eq('event_id', eventId);
+      // pending is not a review decision — keep legacy direct path for that niche case
+      if (status === 'pending') {
+        const { error } = await supabase
+          .from('registrations')
+          .update({ status })
+          .eq('id', registrationId)
+          .eq('event_id', eventId);
+        return toApiResponse<void>({ data: undefined, error });
+      }
+      const { error } = await supabase.rpc('review_registration', {
+        p_registration_id: registrationId,
+        p_decision: status,
+        p_override_reason: null,
+      });
+      return toApiResponse<void>({ data: undefined, error });
+    })();
+  },
+
+  reviewRegistration(
+    registrationId: string,
+    decision: 'approved' | 'rejected' | 'overridden',
+    overrideReason?: string,
+  ): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('review_registration', {
+        p_registration_id: registrationId,
+        p_decision: decision,
+        p_override_reason: overrideReason ?? null,
+      });
       return toApiResponse<void>({ data: undefined, error });
     })();
   },
@@ -549,11 +583,12 @@ export const organizerApi = {
   markAttendance(registrationId: string, eventId: string): Promise<ApiResponse<void>> {
     return (async () => {
       const supabase = createClient();
-      const { error } = await supabase
-        .from('registrations')
-        .update({ attendance: true })
-        .eq('id', registrationId)
-        .eq('event_id', eventId);
+      const { error } = await supabase.rpc('mark_registration_attendance', {
+        p_registration_id: registrationId,
+      });
+      // Fallback for legacy v1 if RPC trigger blocks? RPC handles both, so no fallback needed
+      // Keep eventId param for signature compatibility, not used by RPC
+      void eventId;
       return toApiResponse<void>({ data: undefined, error });
     })();
   },

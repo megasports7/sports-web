@@ -81,6 +81,26 @@ function sanitizeProfileUpdate(data: Partial<Player>): Record<string, unknown> {
   return out;
 }
 
+async function callRegisterForEventV2(
+  supabase: ReturnType<typeof createClient>,
+  params: { event_id: string; event_category_id: string },
+): Promise<ApiResponse<Registration>> {
+  const { data, error } = await supabase.rpc('register_for_event_v2', {
+    p_event_id: params.event_id,
+    p_event_category_id: params.event_category_id,
+  });
+  if (error) return toApiResponse<Registration>({ data: null, error });
+  const result = data as { registration_id: string; eligibility_status: string } | null;
+  return toApiResponse({
+    data: {
+      registration_id: result?.registration_id as string,
+      event_id: params.event_id,
+      status: 'pending' as const,
+    } as Registration,
+    error: null,
+  });
+}
+
 async function callRegisterForEvent(
   supabase: ReturnType<typeof createClient>,
   params: {
@@ -300,6 +320,10 @@ export const playerApi = {
     seni_category?: string;
   }): Promise<ApiResponse<Registration>> {
     return callRegisterForEvent(createClient(), data);
+  },
+
+  registerForEventV2(eventId: string, categoryId: string): Promise<ApiResponse<Registration>> {
+    return callRegisterForEventV2(createClient(), { event_id: eventId, event_category_id: categoryId });
   },
 
   /** A real, previously-invisible gap found while wiring this page's redesign,

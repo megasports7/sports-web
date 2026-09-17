@@ -3,7 +3,8 @@
 import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
-import type { FilteredPlayer } from '@/lib/types';
+import { createClient } from '@/lib/supabase/client';
+import type { FilteredPlayer, ConfiguredEventCategory } from '@/lib/types';
 import { WEIGHT_CATEGORIES_BY_AGE, SIMPLE_WEIGHT_AGES } from '@/lib/player/registrationCategories';
 
 // Flat key list -- shared between TANDING_AGE_CATEGORIES and
@@ -22,6 +23,9 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
   const router = useRouter();
 
   const [eventName, setEventName] = useState<string | null>(null);
+  const [isV2, setIsV2] = useState(false);
+  const [publishedCategories, setPublishedCategories] = useState<ConfiguredEventCategory[]>([]);
+  const [selectedV2CategoryId, setSelectedV2CategoryId] = useState('');
 
   const [eventCategory, setEventCategory] = useState('');
   const [ageCategory, setAgeCategory] = useState('');
@@ -42,7 +46,22 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
 
   useEffect(() => {
     organizerApi.event(id).then((res) => {
-      if (res.success && res.data) setEventName(res.data.event_name);
+      if (res.success && res.data) {
+        setEventName(res.data.event_name);
+        const v = (res.data as unknown as { registration_rules_version?: number }).registration_rules_version;
+        const isV2Event = v === 2;
+        setIsV2(isV2Event);
+        if (isV2Event) {
+          const supabase = createClient();
+          supabase
+            .from('event_categories')
+            .select('*')
+            .eq('event_id', id)
+            .eq('is_published', true)
+            .order('code')
+            .then(({ data }) => setPublishedCategories((data as ConfiguredEventCategory[]) ?? []));
+        }
+      }
     });
   }, [id]);
 
@@ -62,6 +81,57 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
     setLoadingPlayers(true);
     setError(null);
     setHasSearched(true);
+
+    // Phase 7 v2: filter by exact configured category + approved status
+    if (isV2) {
+      if (!selectedV2CategoryId) {
+        setLoadingPlayers(false);
+        setError('Select a published category first');
+        return;
+      }
+      const supabase = createClient();
+      const { data: regs, error: regErr } = await supabase
+        .from('registrations')
+        .select('id, player_id, event_category_id, status')
+        .eq('event_id', id)
+        .eq('event_category_id', selectedV2CategoryId)
+        .eq('status', 'approved');
+      if (regErr) {
+        setLoadingPlayers(false);
+        setPlayers([]);
+        setTotal(0);
+        setByesRequired(0);
+        setSelected(new Set());
+        setError(regErr.message);
+        return;
+      }
+      const rows = regs ?? [];
+      const playerIds = Array.from(new Set(rows.map((r) => r.player_id).filter(Boolean))) as string[];
+      const { data: profiles } = playerIds.length
+        ? await supabase.from('profiles').select('id, name, email, phone').in('id', playerIds)
+        : { data: [] as unknown[] };
+      const byId = new Map((profiles as { id: string; name: string; email: string; phone: string }[] ?? []).map((p) => [p.id, p]));
+      const playersFromRegs = rows.map((r) => {
+        const p = byId.get(r.player_id);
+        return {
+          registration_id: r.id,
+          player_id: r.player_id,
+          player_name: p?.name ?? 'Unknown',
+          email: p?.email,
+          phone: p?.phone,
+          status: 'approved',
+        } as FilteredPlayer;
+      });
+      const n = playersFromRegs.length;
+      const nextPow2 = n > 0 ? Math.pow(2, Math.ceil(Math.log2(n))) : 0;
+      setPlayers(playersFromRegs);
+      setTotal(n);
+      setByesRequired(nextPow2 - n);
+      setSelected(new Set(playersFromRegs.map((p) => p.player_id)));
+      setLoadingPlayers(false);
+      return;
+    }
+
     const res = await organizerApi.getFilteredPlayers(id, {
       event_category: eventCategory || undefined,
       age_category: ageCategory || undefined,
@@ -97,6 +167,43 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
     if (selected.size === 0) return;
     setCreating(true);
     setError(null);
+
+    // Phase 7 v2: direct inserts with event_category_id, triggers enforce exact-category approved
+    if (isV2) {
+      if (!selectedV2CategoryId) {
+        setCreating(false);
+        setError('Select a category');
+        return;
+      }
+      const supabase = createClient();
+      const finalName = batchName.trim() || publishedCategories.find((c) => c.id === selectedV2CategoryId)?.code || 'Batch';
+      const { data: batch, error: batchErr } = await supabase
+        .from('batches')
+        .insert({
+          event_id: id,
+          batch_name: finalName,
+          category: finalName,
+          event_category_id: selectedV2CategoryId,
+          organizer_id: (await supabase.auth.getUser()).data.user?.id,
+        })
+        .select('id')
+        .single();
+      if (batchErr || !batch) {
+        setCreating(false);
+        setError(batchErr?.message || 'Could not create batch');
+        return;
+      }
+      const rows = Array.from(selected).map((pid) => ({ batch_id: batch.id, player_id: pid }));
+      const { error: playersErr } = await supabase.from('batch_players').insert(rows);
+      setCreating(false);
+      if (playersErr) {
+        setError(playersErr.message);
+      } else {
+        router.push(`/organizer/events/${id}/batches`);
+      }
+      return;
+    }
+
     const label = computeLabel();
     const finalName = batchName.trim() || label;
     // player_ids are FilteredPlayer.player_id -- already the real profile
@@ -124,76 +231,94 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
 
       <div className="card">
         <h2>Filter players</h2>
-        <div className="field-grid">
-          <label className="field">
-            <span>Event category</span>
-            <select
-              value={eventCategory}
-              onChange={(e) => {
-                setEventCategory(e.target.value);
-                setAgeCategory('');
-                setWeightCategory('');
-                setWeightText('');
-                setSeniType('');
-              }}
-            >
-              <option value="">Any</option>
-              <option value="TANDING">TANDING</option>
-              <option value="SENI">SENI</option>
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Age category</span>
-            <select
-              value={ageCategory}
-              onChange={(e) => {
-                setAgeCategory(e.target.value);
-                setWeightCategory('');
-                setWeightText('');
-              }}
-            >
-              <option value="">Any</option>
-              {AGE_CATEGORIES.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Weight category</span>
-            {useWeightSelect ? (
-              <select value={weightCategory} onChange={(e) => setWeightCategory(e.target.value)}>
-                <option value="">Any</option>
-                {(WEIGHT_CATEGORIES_BY_AGE[ageCategory] ?? []).map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.label}
+        {isV2 ? (
+          <>
+            <label className="field">
+              <span>Configured category (published)</span>
+              <select value={selectedV2CategoryId} onChange={(e) => setSelectedV2CategoryId(e.target.value)}>
+                <option value="">Select category</option>
+                {publishedCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.code} — {c.competition_type} {c.age_label} {c.gender} {c.weight_label || c.seni_category || ''}
                   </option>
                 ))}
               </select>
-            ) : (
-              <input value={weightText} onChange={(e) => setWeightText(e.target.value)} placeholder="Weight category (optional)" />
-            )}
-          </label>
+            </label>
+            {publishedCategories.length === 0 && <p className="text-muted">No published categories for this event.</p>}
+          </>
+        ) : (
+          <div className="field-grid">
+            <label className="field">
+              <span>Event category</span>
+              <select
+                value={eventCategory}
+                onChange={(e) => {
+                  setEventCategory(e.target.value);
+                  setAgeCategory('');
+                  setWeightCategory('');
+                  setWeightText('');
+                  setSeniType('');
+                }}
+              >
+                <option value="">Any</option>
+                <option value="TANDING">TANDING</option>
+                <option value="SENI">SENI</option>
+              </select>
+            </label>
 
-          <label className="field">
-            <span>Seni type</span>
-            <select value={seniType} onChange={(e) => setSeniType(e.target.value)}>
-              <option value="">Any</option>
-              {SENI_TYPES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+            <label className="field">
+              <span>Age category</span>
+              <select
+                value={ageCategory}
+                onChange={(e) => {
+                  setAgeCategory(e.target.value);
+                  setWeightCategory('');
+                  setWeightText('');
+                }}
+              >
+                <option value="">Any</option>
+                {AGE_CATEGORIES.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <button type="button" className="btn-primary" onClick={handleShowPlayers} disabled={loadingPlayers}>
+            <label className="field">
+              <span>Weight category</span>
+              {useWeightSelect ? (
+                <select value={weightCategory} onChange={(e) => setWeightCategory(e.target.value)}>
+                  <option value="">Any</option>
+                  {(WEIGHT_CATEGORIES_BY_AGE[ageCategory] ?? []).map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={weightText} onChange={(e) => setWeightText(e.target.value)} placeholder="Weight category (optional)" />
+              )}
+            </label>
+
+            <label className="field">
+              <span>Seni type</span>
+              <select value={seniType} onChange={(e) => setSeniType(e.target.value)}>
+                <option value="">Any</option>
+                {SENI_TYPES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        <button type="button" className="btn-primary" onClick={handleShowPlayers} disabled={loadingPlayers || (isV2 && !selectedV2CategoryId)}>
           {loadingPlayers ? 'Loading…' : 'Show players'}
         </button>
+        {isV2 && <p className="text-muted" style={{ fontSize: 12 }}>Only approved registrations for the exact category are shown. Batch will enforce this.</p>}
       </div>
 
       {hasSearched && (

@@ -63,6 +63,9 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<Registration | null>(null);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overriding, setOverriding] = useState(false);
 
   async function refresh() {
     const res = await organizerApi.registrations(id);
@@ -105,7 +108,33 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
       showToast(status === 'approved' ? 'Registration approved' : 'Registration rejected');
       refresh();
     } else {
-      showToast(res.message || 'Update failed');
+      const msg = res.message || 'Update failed';
+      // Phase 6: ineligible/pending requires override with reason
+      if (status === 'approved' && /without override/i.test(msg)) {
+        const reg = registrations.find((r) => r.registration_id === registrationId) || null;
+        setOverrideTarget(reg);
+        setOverrideReason('');
+      }
+      showToast(msg);
+    }
+  }
+
+  async function handleOverride() {
+    if (!overrideTarget) return;
+    if (!overrideReason.trim()) {
+      showToast('Override reason is required');
+      return;
+    }
+    setOverriding(true);
+    const res = await organizerApi.reviewRegistration(overrideTarget.registration_id, 'overridden', overrideReason.trim());
+    setOverriding(false);
+    if (res.success) {
+      showToast('Registration overridden and approved');
+      setOverrideTarget(null);
+      setOverrideReason('');
+      refresh();
+    } else {
+      showToast(res.message || 'Override failed');
     }
   }
 
@@ -219,6 +248,32 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
             })}
           </div>
         </>
+      )}
+
+      {overrideTarget && (
+        <div className="override-backdrop" onClick={() => setOverrideTarget(null)}>
+          <div className="override-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Override eligibility</h3>
+            <p className="override-player">
+              {overrideTarget.player_name || 'Unknown'} — {categoryLabel(overrideTarget)}
+            </p>
+            <p className="override-note">This registration is ineligible or pending weight verification. Provide a reason to override and approve.</p>
+            <textarea
+              placeholder="Reason for override (required)"
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+              rows={3}
+            />
+            <div className="override-actions">
+              <button className="btn-reject" onClick={() => setOverrideTarget(null)} disabled={overriding}>
+                Cancel
+              </button>
+              <button className="btn-approve" onClick={handleOverride} disabled={overriding || !overrideReason.trim()}>
+                {overriding ? 'Overriding…' : 'Confirm override'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && <div className="toast">{toast}</div>}
@@ -415,6 +470,57 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
           border-radius: 12px;
           box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.4);
           z-index: 50;
+        }
+
+        .override-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 60;
+          padding: 16px;
+        }
+        .override-card {
+          background: var(--color-surface);
+          border-radius: 16px;
+          padding: 20px;
+          width: 100%;
+          max-width: 420px;
+          box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.3);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .override-card h3 {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 800;
+        }
+        .override-player {
+          font-size: 13px;
+          color: #3a3d45;
+          margin: 0;
+        }
+        .override-note {
+          font-size: 12px;
+          color: var(--color-muted);
+          margin: 0;
+        }
+        .override-card textarea {
+          width: 100%;
+          border: 1.5px solid var(--color-line);
+          border-radius: 10px;
+          padding: 10px;
+          font-family: inherit;
+          font-size: 13px;
+          resize: vertical;
+        }
+        .override-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
         }
 
         @media (max-width: 640px) {
