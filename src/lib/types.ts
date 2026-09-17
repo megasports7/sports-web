@@ -52,6 +52,10 @@ export interface Player {
   // Real profiles.status column -- optional here since no player-facing
   // screen reads/writes it, but admin's user list does (admin.api.ts).
   status?: string;
+  // Demo-only weight fields (worktree QA) — lets teammates tweak age/gender/weight to test category eligibility
+  declared_weight_kg?: number | null;
+  verified_weight_kg?: number | null;
+  weight_verified_at?: string | null;
 }
 
 export interface CertificateCounts {

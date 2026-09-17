@@ -119,7 +119,12 @@ export default function PlayerProfilePage() {
 
   function applyProfile(p: Player) {
     setPlayer(p);
-    setForm(Object.fromEntries(FIELDS.map((f) => [f.key, (p[f.key] as string | undefined) ?? ''])));
+    setForm({
+      ...Object.fromEntries(FIELDS.map((f) => [f.key, (p[f.key] as string | undefined) ?? ''])),
+      dob: p.dob ? p.dob.slice(0, 10) : '',
+      gender: p.gender ?? '',
+      declared_weight_kg: p.declared_weight_kg != null ? String(p.declared_weight_kg) : '',
+    });
   }
 
   async function refresh() {
@@ -143,7 +148,25 @@ export default function PlayerProfilePage() {
 
   async function handleSave() {
     setSaving(true);
-    const res = await playerApi.updateProfile(form);
+    // declared_weight_kg: empty → null, otherwise number
+    const payload: Record<string, unknown> = { ...form };
+    const rawWeight = (form.declared_weight_kg ?? '').trim();
+    if (rawWeight === '') payload.declared_weight_kg = null;
+    else {
+      const n = Number(rawWeight);
+      if (!Number.isFinite(n) || n <= 0 || n > 500) {
+        setSaving(false);
+        showToast('Weight must be 0-500 kg');
+        return;
+      }
+      payload.declared_weight_kg = n;
+    }
+    // dob: empty → null, otherwise keep YYYY-MM-DD string
+    if (!form.dob) payload.dob = null;
+    // gender: empty → null
+    if (!form.gender) payload.gender = null;
+
+    const res = await playerApi.updateProfile(payload);
     setSaving(false);
     if (res.success) {
       setEditing(false);
@@ -255,15 +278,52 @@ export default function PlayerProfilePage() {
             <CalendarIcon />
             Date of birth
           </span>
-          <span className="v muted">{player.dob || 'Not set'}</span>
+          {editing ? (
+            <input type="date" value={form.dob ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, dob: e.target.value }))} />
+          ) : (
+            <span className={`v ${!player.dob ? 'muted' : ''}`}>{player.dob ? new Date(player.dob).toLocaleDateString() : 'Not set'}</span>
+          )}
         </div>
         <div className="row">
           <span className="k">
             <GenderIcon />
             Gender
           </span>
-          <span className="v muted">{player.gender || 'Not set'}</span>
+          {editing ? (
+            <select value={form.gender ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, gender: e.target.value }))}>
+              <option value="">Select</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          ) : (
+            <span className={`v ${!player.gender ? 'muted' : ''}`}>{player.gender || 'Not set'}</span>
+          )}
         </div>
+        <div className="row">
+          <span className="k">Declared weight (kg)</span>
+          {editing ? (
+            <input
+              type="number"
+              min="0.01"
+              max="500"
+              step="0.01"
+              value={form.declared_weight_kg ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, declared_weight_kg: e.target.value }))}
+              placeholder="e.g. 42"
+            />
+          ) : (
+            <span className={`v ${player.declared_weight_kg == null ? 'muted' : ''}`}>
+              {player.declared_weight_kg != null ? `${player.declared_weight_kg} kg` : 'Not set'}
+            </span>
+          )}
+        </div>
+        <div className="row">
+          <span className="k">Verified weight</span>
+          <span className={`v ${player.verified_weight_kg == null ? 'muted' : ''}`}>
+            {player.verified_weight_kg != null ? `${player.verified_weight_kg} kg` : 'Not set (organizer verifies)'}
+          </span>
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--color-muted)', margin: '4px 0 0' }}>Demo — worktree QA only. Change age/gender/weight to test your categories.</p>
 
         {editing && (
           <div className="card-actions">

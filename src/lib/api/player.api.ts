@@ -73,6 +73,7 @@ function sanitizeProfileUpdate(data: Partial<Player>): Record<string, unknown> {
     'sport',
     'gender',
     'father_name',
+    'declared_weight_kg',
   ];
   for (const key of passthrough) {
     if (src[key] !== undefined) out[key] = src[key];
