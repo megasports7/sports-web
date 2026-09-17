@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 
-export type CameraState = 'requesting' | 'granted' | 'denied' | 'no-camera' | 'error';
+export type CameraState = 'requesting' | 'granted' | 'denied' | 'no-camera' | 'blocked' | 'error';
 
 interface QrScannerProps {
   /** Called once per newly-seen distinct QR value -- repeat frames of the
@@ -46,48 +46,113 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
   }, [onScan]);
 
   const [state, setState] = useState<CameraState>('requesting');
+  // Bump to re-run the start effect below (the "Try again" path) without
+  // unmounting the component -- remounting would also work but loses the
+  // onScan closure wiring this component deliberately preserves.
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    let cleanupTrack: (() => void) | null = null;
+
+    function stopStream() {
+      cleanupTrack?.();
+      cleanupTrack = null;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
 
     async function start() {
       if (!navigator.mediaDevices?.getUserMedia) {
         setState('error');
         return;
       }
+      let stream: MediaStream;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: 'environment' } },
           audio: false,
         });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        setState('granted');
       } catch (err) {
         if (cancelled) return;
         const name = (err as DOMException)?.name;
         if (name === 'NotAllowedError' || name === 'PermissionDeniedError') setState('denied');
         else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') setState('no-camera');
         else setState('error');
+        return;
       }
+      if (cancelled) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (!video) {
+        setState('error');
+        return;
+      }
+      // Autoplay-policy hardening: muted/playsInline as element PROPERTIES,
+      // not just JSX attributes (React does not reliably set the muted
+      // property, and an unmuted play() rejects outside a user gesture).
+      // play() itself waits for metadata so frames exist before 'granted'.
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      // A granted-but-silent track (camera held by another tab/app, OS-level
+      // block, virtual camera with no input) resolves getUserMedia yet
+      // renders eternal black. Surface it with an actionable message instead
+      // of leaving the user staring at a dark viewfinder.
+      const [track] = stream.getVideoTracks();
+      if (track) {
+        const onSilence = () => {
+          if (!cancelled) setState('blocked');
+        };
+        const onFrames = () => {
+          if (!cancelled) setState('granted');
+        };
+        track.addEventListener('mute', onSilence);
+        track.addEventListener('ended', onSilence);
+        track.addEventListener('unmute', onFrames);
+        cleanupTrack = () => {
+          track.removeEventListener('mute', onSilence);
+          track.removeEventListener('ended', onSilence);
+          track.removeEventListener('unmute', onFrames);
+        };
+        if (track.muted) {
+          setState('blocked');
+          return;
+        }
+      }
+      try {
+        if (video.readyState < 1) {
+          await new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(() => reject(new Error('metadata timeout')), 10000);
+            video.onloadedmetadata = () => {
+              window.clearTimeout(timer);
+              resolve();
+            };
+          });
+        }
+        await video.play();
+      } catch {
+        if (!cancelled) setState('error');
+        return;
+      }
+      if (cancelled) return;
+      setState('granted');
     }
 
     start();
 
     return () => {
       cancelled = true;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+      stopStream();
     };
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     if (state !== 'granted') return;
@@ -98,7 +163,9 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
     if (!ctx) return;
 
     function tick() {
-      if (active && video!.readyState === video!.HAVE_ENOUGH_DATA) {
+      // videoWidth is 0 until the first frame arrives -- dividing by it
+      // would poison the canvas size and kill this loop, so wait it out.
+      if (active && video!.readyState === video!.HAVE_ENOUGH_DATA && video!.videoWidth > 0) {
         // Downscaled decode target -- full camera resolution is unnecessary
         // for a QR code held reasonably close and wastes CPU/battery.
         const targetWidth = 480;
@@ -141,6 +208,27 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
   if (state === 'no-camera') {
     return <p className={className ?? 'text-sm text-red-600'}>No camera was found on this device.</p>;
   }
+  if (state === 'blocked') {
+    return (
+      <div className={className}>
+        <p className="text-sm font-semibold text-amber-700">
+          The camera opened but is not sending any picture — it may be in use
+          by another tab or app, blocked by the OS, or a virtual camera with
+          no input.
+        </p>
+        <button
+          type="button"
+          className="mt-2 rounded-lg bg-black px-3 py-2 text-sm font-medium text-white"
+          onClick={() => {
+            setState('requesting');
+            setRetryKey((k) => k + 1);
+          }}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (state === 'error') {
     return (
       <p className={className ?? 'text-sm text-red-600'}>
@@ -152,7 +240,7 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
 
   return (
     <div className={className}>
-      <video ref={videoRef} className="w-full rounded-lg bg-black" playsInline muted />
+      <video ref={videoRef} className="w-full rounded-lg bg-black" playsInline muted autoPlay />
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
