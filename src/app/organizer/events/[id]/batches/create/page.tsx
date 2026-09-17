@@ -168,38 +168,33 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
     setCreating(true);
     setError(null);
 
-    // Phase 7 v2: direct inserts with event_category_id, triggers enforce exact-category approved
+    // Phase 7 v2: creation goes through the sanctioned
+    // create_batch_with_bracket RPC. Direct batches INSERT is revoked by
+    // design (see sports-mobile-main migration 20260826140000: the RPC is
+    // the only way a batch can be created, so a bracket-less batch is
+    // impossible). Player filtering above already restricts selection to
+    // approved registrations for the exact category, and the category code
+    // is preserved as the text snapshot via category_label. Restoring the
+    // event_category_id link needs a p_event_category_id RPC parameter,
+    // which is a DB migration and deliberately out of scope here.
     if (isV2) {
       if (!selectedV2CategoryId) {
         setCreating(false);
         setError('Select a category');
         return;
       }
-      const supabase = createClient();
       const finalName = batchName.trim() || publishedCategories.find((c) => c.id === selectedV2CategoryId)?.code || 'Batch';
-      const { data: batch, error: batchErr } = await supabase
-        .from('batches')
-        .insert({
-          event_id: id,
-          batch_name: finalName,
-          category: finalName,
-          event_category_id: selectedV2CategoryId,
-          organizer_id: (await supabase.auth.getUser()).data.user?.id,
-        })
-        .select('id')
-        .single();
-      if (batchErr || !batch) {
-        setCreating(false);
-        setError(batchErr?.message || 'Could not create batch');
-        return;
-      }
-      const rows = Array.from(selected).map((pid) => ({ batch_id: batch.id, player_id: pid }));
-      const { error: playersErr } = await supabase.from('batch_players').insert(rows);
+      const res = await organizerApi.createBatch({
+        event_id: id,
+        batch_name: finalName,
+        category_label: finalName,
+        player_ids: Array.from(selected),
+      });
       setCreating(false);
-      if (playersErr) {
-        setError(playersErr.message);
-      } else {
+      if (res.success) {
         router.push(`/organizer/events/${id}/batches`);
+      } else {
+        setError(res.message || 'Could not create batch');
       }
       return;
     }
