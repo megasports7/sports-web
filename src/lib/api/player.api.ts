@@ -226,8 +226,18 @@ export const playerApi = {
         return toApiResponse<Player>({ data: null, error: error ?? { message: 'Profile not found' } });
 
       const photo = await resolvePhoto(supabase, data.photo);
+      const { data: latestAudit } = await supabase
+        .from('player_weight_audit')
+        .select('verified_by_name')
+        .eq('player_id', uid)
+        .order('verified_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
       const player = mapPlayerRow(data as Record<string, unknown>)!;
-      return toApiResponse({ data: { ...player, photo }, error: null });
+      return toApiResponse({
+        data: { ...player, photo, weight_verified_by_name: latestAudit?.verified_by_name ?? null },
+        error: null,
+      });
     })();
   },
 
