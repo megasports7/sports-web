@@ -82,6 +82,12 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
         const name = (err as DOMException)?.name;
         if (name === 'NotAllowedError' || name === 'PermissionDeniedError') setState('denied');
         else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') setState('no-camera');
+        // NotReadableError: permission was granted but the OS/driver would
+        // not hand over frames -- camera held by another app/tab, disabled
+        // in OS privacy settings, or a broken driver. OverconstrainedError:
+        // no device satisfies the request. Both are retryable device states,
+        // not a missing secure context, so they share the 'blocked' UI.
+        else if (name === 'NotReadableError' || name === 'OverconstrainedError') setState('blocked');
         else setState('error');
         return;
       }
@@ -139,7 +145,14 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
         }
         await video.play();
       } catch {
-        if (!cancelled) setState('error');
+        // Stream was acquired but never produced a picture (dead/virtual
+        // camera) or playback was refused: release the camera and show the
+        // retryable 'blocked' UI rather than the generic secure-context
+        // message, which does not describe this situation.
+        if (!cancelled) {
+          stopStream();
+          setState('blocked');
+        }
         return;
       }
       if (cancelled) return;
