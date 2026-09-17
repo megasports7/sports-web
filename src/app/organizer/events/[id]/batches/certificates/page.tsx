@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { downloadCertificateImage } from '@/lib/certificateDownload';
 import type { Batch } from '@/lib/types';
 
 export default function OrganizerCertificatesPage({ params }: { params: Promise<{ id: string }> }) {
@@ -22,6 +23,7 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
   const [certsError, setCertsError] = useState<string | null>(null);
 
   const [viewBusyId, setViewBusyId] = useState<string | null>(null);
+  const [dlBusyId, setDlBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const [generating, setGenerating] = useState(false);
@@ -80,6 +82,30 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
       window.open(res.data.url, '_blank', 'noopener,noreferrer');
     } else {
       showToast(res.message || 'Could not open certificate');
+    }
+  }
+
+  async function handleDownload(cert: Record<string, unknown>) {
+    const rawId = cert.cert_id ?? cert.certificate_id;
+    if (!rawId) return;
+    const certId = String(rawId);
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null);
+    setDlBusyId(certId);
+    try {
+      await downloadCertificateImage({
+        level: str(cert.level) || str(cert.position) || str(cert.certificate_type) || undefined,
+        playerName: str(cert.player_name) || 'Player',
+        eventName: eventName || str(cert.event_name) || 'Event',
+        signName: str(cert.sign_name),
+        signDesignation: str(cert.sign_designation),
+        sign2Name: str(cert.sign2_name),
+        sign2Designation: str(cert.sign2_designation),
+      });
+      showToast('Certificate downloaded');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not download certificate');
+    } finally {
+      setDlBusyId(null);
     }
   }
 
@@ -144,9 +170,14 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
                     <span className="c-name">{playerName}</span>
                     <span className="c-level">{levelOrPosition}</span>
                   </div>
-                  <button type="button" className="btn-view" disabled={viewBusyId === certId} onClick={() => handleView(c)}>
-                    {viewBusyId === certId ? 'Opening…' : 'View'}
-                  </button>
+                  <span className="c-actions">
+                    <button type="button" className="btn-view" disabled={viewBusyId === certId} onClick={() => handleView(c)}>
+                      {viewBusyId === certId ? 'Opening…' : 'View'}
+                    </button>
+                    <button type="button" className="btn-download" disabled={dlBusyId === certId} onClick={() => handleDownload(c)}>
+                      {dlBusyId === certId ? 'Working…' : 'Download'}
+                    </button>
+                  </span>
                 </div>
               );
             })}
@@ -306,6 +337,30 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
         .btn-view:disabled {
           opacity: 0.6;
           cursor: default;
+        }
+        .btn-download {
+          flex-shrink: 0;
+          border: 1.5px solid var(--color-line);
+          border-radius: 10px;
+          padding: 8px 16px;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #0a8a3f;
+          cursor: pointer;
+          font-family: inherit;
+          background: var(--color-surface);
+        }
+        .btn-download:hover:not(:disabled) {
+          border-color: #0a8a3f;
+        }
+        .btn-download:disabled {
+          opacity: 0.6;
+          cursor: default;
+        }
+        .c-actions {
+          display: flex;
+          gap: 8px;
+          flex-shrink: 0;
         }
 
         .toast {
