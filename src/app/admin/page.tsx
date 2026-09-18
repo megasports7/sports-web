@@ -68,8 +68,10 @@ function PinIcon() {
   );
 }
 function ChevronIcon() {
+  // Intrinsic dimensions on the element itself (not only CSS): icon sizing
+  // must never depend on stylesheet scoping to be correct.
   return (
-    <svg viewBox="0 0 20 20" fill="none">
+    <svg width={16} height={16} viewBox="0 0 20 20" fill="none">
       <path d="m8 5 5 5-5 5" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -395,6 +397,8 @@ export default function AdminDashboardPage() {
           box-shadow: 0 4px 8px rgba(22, 24, 29, 0.05), 0 14px 26px -12px rgba(22, 24, 29, 0.2);
         }
         .manage-main {
+          flex: 1;
+          min-width: 0;
           display: flex;
           flex-direction: column;
           gap: 2px;
