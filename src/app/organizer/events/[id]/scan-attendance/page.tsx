@@ -41,7 +41,9 @@ export default function ScanAttendancePage({ params }: { params: Promise<{ id: s
     setBusy(true);
     const res = await organizerApi.scanAttendance(qrData, eventId);
     setBusy(false);
-    setResult({ ok: res.success, message: res.success ? 'Attendance marked!' : res.message || 'Failed to mark attendance' });
+    // The API owns the wording: 'Attendance marked!' for a fresh mark,
+    // 'Attendance already marked' for a re-scan, specific reasons otherwise.
+    setResult({ ok: res.success, message: res.message || (res.success ? 'Attendance marked!' : 'Failed to mark attendance') });
   }
 
   return (

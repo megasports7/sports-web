@@ -1155,17 +1155,33 @@ export const organizerApi = {
     }
     const playerUuid = resolved.data.id;
 
+    // v2 multi-registration: one player may hold several ACTIVE
+    // registrations in the same event (one per category), so the old
+    // .maybeSingle() throws PGRST116 ("JSON object requested, multiple rows")
+    // for exactly the players v2 was built for. Fetch the set instead, mark
+    // every unmarked one, and report distinctly when everything is already
+    // marked -- the re-scan case the UI must not confuse with a fresh mark.
+    // (Mobile's identical maybeSingle call shares this latent bug; mobile
+    // Phase 4-7 is deferred, flagged here rather than fixed there.)
     const supabase = createClient();
-    const { data: regRow, error: regErr } = await supabase
+    const { data: regRows, error: regErr } = await supabase
       .from('registrations')
-      .select('id')
+      .select('id, attendance')
       .eq('event_id', eventId)
       .eq('player_id', playerUuid)
-      .maybeSingle();
+      .neq('status', 'rejected');
     if (regErr) return toApiResponse<void>({ data: undefined, error: regErr });
-    if (!regRow) return { success: false, message: 'Player not registered for this event' };
+    if (!regRows?.length) return { success: false, message: 'Player not registered for this event' };
 
-    return this.markAttendance(regRow.id, eventId);
+    type RegRow = { id: string; attendance: boolean | null };
+    const unmarked = (regRows as RegRow[]).filter((r) => !r.attendance);
+    if (!unmarked.length) return { success: true, message: 'Attendance already marked' };
+
+    for (const row of unmarked) {
+      const marked = await this.markAttendance(row.id, eventId);
+      if (!marked.success) return marked;
+    }
+    return { success: true, message: 'Attendance marked!' };
   },
 
   /** Records a QR scan against a specific attendance list. The RPC does all
