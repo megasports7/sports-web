@@ -5,11 +5,39 @@ import Link from 'next/link';
 import { adminApi } from '@/lib/api/admin.api';
 import type { AdminDashboardData } from '@/lib/types';
 
-const MANAGE_LINKS = [
-  { href: '/admin/users/players', label: 'Players', key: 'total_players' as const, suffix: 'registered' },
-  { href: '/admin/users/organizers', label: 'Organizers', key: 'total_organizers' as const, suffix: 'registered' },
-  { href: '/admin/users/referees', label: 'Referees', key: 'total_referees' as const, suffix: 'registered' },
-  { href: '/admin/users/associates', label: 'Associates', key: 'total_associates' as const, suffix: 'district heads' },
+const MANAGE_CARDS = [
+  {
+    href: '/admin/users/players',
+    label: 'Players',
+    key: 'total_players' as const,
+    caption: 'Registered players',
+    icon: PeopleIcon,
+    tint: 'var(--color-accent-blue)',
+  },
+  {
+    href: '/admin/users/organizers',
+    label: 'Organizers',
+    key: 'total_organizers' as const,
+    caption: 'Registered organizers',
+    icon: ShieldIcon,
+    tint: 'var(--color-accent-violet)',
+  },
+  {
+    href: '/admin/users/referees',
+    label: 'Referees',
+    key: 'total_referees' as const,
+    caption: 'Registered referees',
+    icon: WhistleIcon,
+    tint: 'var(--color-gold)',
+  },
+  {
+    href: '/admin/users/associates',
+    label: 'Associates',
+    key: 'total_associates' as const,
+    caption: 'District heads',
+    icon: PinIcon,
+    tint: 'var(--color-accent-green)',
+  },
 ];
 
 function ShieldIcon() {
@@ -71,6 +99,16 @@ function CheckIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none">
       <path d="m4 10.5 3.5 3.5L16 5.5" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+// Navigation affordance icon. Intrinsic width/height live on the element
+// itself (not only CSS) so its size can never depend on stylesheet scoping
+// to be correct.
+function ChevronRightIcon() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="m8 5 5 5-5 5" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -148,20 +186,27 @@ export default function AdminDashboardPage() {
 
       <div>
         <p className="section-title">Manage users</p>
-        <div className="manage-list">
-          {MANAGE_LINKS.map((m) => (
-            <Link key={m.href} href={m.href} className="manage-row">
-              <span className="manage-main">
-                <span className="manage-title">{m.label}</span>
-                <span className="manage-sub">
-                  {data[m.key]} {m.suffix}
+        <p className="section-sub">View and manage registered users across the platform.</p>
+        <div className="manage-grid">
+          {MANAGE_CARDS.map((m) => {
+            const Icon = m.icon;
+            return (
+              <Link key={m.href} href={m.href} className="manage-card">
+                <span className="manage-top">
+                  <span
+                    className="manage-icon"
+                    style={{ background: `color-mix(in srgb, ${m.tint} 14%, transparent)`, color: m.tint }}
+                  >
+                    <Icon />
+                  </span>
+                  <ChevronRightIcon />
                 </span>
-              </span>
-              <span className="go" aria-hidden="true">
-                ›
-              </span>
-            </Link>
-          ))}
+                <span className="manage-count">{data[m.key]}</span>
+                <span className="manage-name">{m.label}</span>
+                <span className="manage-caption">{m.caption}</span>
+              </Link>
+            );
+          })}
         </div>
       </div>
 
@@ -169,15 +214,23 @@ export default function AdminDashboardPage() {
         <div>
           <p className="section-title">Recent players</p>
           <div className="people-list">
-            {data.recent_players.slice(0, 5).map((p) => (
-              <div className="person-row" key={p.id}>
-                <span className="person-avatar">{initials(p.player_name || '?')}</span>
-                <span className="person-main">
-                  <span className="person-name">{p.player_name}</span>
-                  <span className="person-sub">{p.email}</span>
-                </span>
-              </div>
-            ))}
+            {data.recent_players.slice(0, 5).map((p) => {
+              const location = [p.district, p.state].filter(Boolean).join(', ');
+              return (
+                <Link key={p.id} href={`/admin/users/players/${p.id}/edit`} className="person-row">
+                  <span className="person-avatar">{initials(p.player_name || '?')}</span>
+                  <span className="person-main">
+                    <span className="person-name">{p.player_name}</span>
+                    <span className="person-sub">
+                      {p.email}
+                      {location ? ` · ${location}` : ''}
+                    </span>
+                  </span>
+                  {p.status && p.status !== 'active' && <span className="status-pill">{p.status}</span>}
+                  <ChevronRightIcon />
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
@@ -364,66 +417,153 @@ export default function AdminDashboardPage() {
           margin-top: 4px;
         }
 
-        .manage-list {
-          display: flex;
-          flex-direction: column;
+        .section-sub {
+          font-size: 13px;
+          color: var(--color-muted);
+          margin: -6px 0 12px;
+        }
+        .manage-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
           gap: 10px;
         }
-        .manage-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 14px;
-          background: var(--color-surface);
-          border: 1px solid rgba(22, 24, 29, 0.05);
-          border-radius: 18px;
-          padding: 12px 16px;
-          text-decoration: none;
-          color: inherit;
-          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -12px rgba(22, 24, 29, 0.14);
-          transition: box-shadow 0.15s ease, transform 0.15s ease;
+        @media (max-width: 860px) {
+          .manage-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
         }
-        .manage-row:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 8px rgba(22, 24, 29, 0.05), 0 14px 26px -12px rgba(22, 24, 29, 0.2);
+        @media (max-width: 520px) {
+          .manage-grid {
+            grid-template-columns: 1fr;
+          }
         }
-        .manage-main {
-          flex: 1;
-          min-width: 0;
+        .manage-card {
           display: flex;
           flex-direction: column;
           gap: 2px;
+          min-height: 168px;
+          background: var(--color-surface);
+          border: 1px solid rgba(22, 24, 29, 0.05);
+          border-radius: 18px;
+          padding: 16px;
+          text-decoration: none;
+          color: inherit;
+          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -12px rgba(22, 24, 29, 0.14);
+          transition: box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
         }
-        .manage-title {
-          font-size: 15px;
-          font-weight: 700;
+        .manage-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(22, 24, 29, 0.12);
+          box-shadow: 0 4px 8px rgba(22, 24, 29, 0.05), 0 16px 30px -14px rgba(22, 24, 29, 0.22);
         }
-        .manage-sub {
-          font-size: 12.5px;
-          color: var(--color-muted);
+        .manage-card:active {
+          transform: translateY(0) scale(0.99);
         }
-        .go {
-          flex-shrink: 0;
-          font-size: 20px;
-          font-weight: 700;
-          line-height: 1;
+        .manage-card:focus-visible {
+          outline: 2px solid var(--color-corner-red);
+          outline-offset: 2px;
+        }
+        .manage-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          margin-bottom: 10px;
           color: #9aa0ac;
+        }
+        .manage-card:hover .manage-top {
+          color: var(--color-corner-red);
+        }
+        .manage-top :global(svg) {
+          transition: transform 0.15s ease;
+        }
+        .manage-card:hover .manage-top :global(svg) {
+          transform: translateX(2px);
+        }
+        .manage-icon {
+          width: 42px;
+          height: 42px;
+          border-radius: 13px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .manage-icon :global(svg) {
+          width: 20px;
+          height: 20px;
+        }
+        .manage-count {
+          display: block;
+          font-size: 32px;
+          font-weight: 800;
+          letter-spacing: -0.4px;
+          color: var(--color-ink);
+          line-height: 1.15;
+          margin: 8px 0 0;
+        }
+        .manage-name {
+          display: block;
+          font-size: 14.5px;
+          font-weight: 700;
+          line-height: 1.35;
+          margin-top: 2px;
+        }
+        .manage-caption {
+          display: block;
+          font-size: 12.5px;
+          line-height: 1.4;
+          color: var(--color-muted);
         }
 
         .people-list {
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          background: var(--color-surface);
+          border: 1px solid rgba(22, 24, 29, 0.05);
+          border-radius: 18px;
+          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -12px rgba(22, 24, 29, 0.14);
+          overflow: hidden;
+        }
+        .people-list > * + * {
+          border-top: 1px solid var(--color-line);
         }
         .person-row {
           display: flex;
           align-items: center;
           gap: 14px;
-          background: var(--color-surface);
-          border: 1px solid rgba(22, 24, 29, 0.05);
-          border-radius: 18px;
-          padding: 13px 18px;
-          box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -12px rgba(22, 24, 29, 0.14);
+          padding: 11px 18px;
+          text-decoration: none;
+          color: inherit;
+          transition: background 0.15s ease;
+        }
+        .person-row:hover {
+          background: color-mix(in srgb, var(--color-line) 38%, transparent);
+        }
+        .person-row:active {
+          background: color-mix(in srgb, var(--color-line) 60%, transparent);
+        }
+        .person-row:focus-visible {
+          outline: 2px solid var(--color-corner-red);
+          outline-offset: -2px;
+        }
+        .person-row > :global(svg):last-child {
+          flex-shrink: 0;
+          color: #9aa0ac;
+          transition: transform 0.15s ease, color 0.15s ease;
+        }
+        .person-row:hover > :global(svg):last-child {
+          color: var(--color-corner-red);
+          transform: translateX(2px);
+        }
+        .status-pill {
+          flex-shrink: 0;
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          text-transform: uppercase;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--color-status-pending) 18%, transparent);
+          color: #93710f;
         }
         .person-avatar {
           width: 42px;
