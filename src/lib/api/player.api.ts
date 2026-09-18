@@ -74,6 +74,7 @@ function sanitizeProfileUpdate(data: Partial<Player>): Record<string, unknown> {
     'gender',
     'father_name',
     'declared_weight_kg',
+    'nsrd_id',
   ];
   for (const key of passthrough) {
     if (src[key] !== undefined) out[key] = src[key];
@@ -257,6 +258,29 @@ export const playerApi = {
       const photo = await resolvePhoto(supabase, updated?.photo);
       const player = updated ? mapPlayerRow(updated as Record<string, unknown>) : null;
       return toApiResponse({ data: player ? { ...player, photo } : null, error: null });
+    })();
+  },
+
+  /** Save the player's own Aadhaar into the restricted player_sensitive_ids
+   *  table (self + admin read, player-only write -- never part of profiles).
+   *  Mirrors mobile AuthContext's post-signup upsert: best-effort by
+   *  contract, so failures return (not throw) and callers decide whether to
+   *  block -- signup itself must never fail because of this write. */
+  saveSensitiveIds(aadhaar: string): Promise<ApiResponse<void>> {
+    return (async () => {
+      try {
+        const supabase = createClient();
+        const uid = await getUid(supabase);
+        const { error } = await supabase
+          .from('player_sensitive_ids')
+          .upsert({ player_id: uid, aadhaar }, { onConflict: 'player_id' });
+        return toApiResponse<void>({ data: undefined, error });
+      } catch (err) {
+        return {
+          success: false,
+          message: err instanceof Error ? err.message : 'Could not save ID',
+        };
+      }
     })();
   },
 
