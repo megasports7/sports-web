@@ -265,25 +265,32 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
     };
   }, [state, active]);
 
-  // Single return below appends the debug-log panel to every state, so the
-  // full story is visible whether the camera is requesting, blocked, or
-  // streaming -- no DevTools needed to report what happened.
-  let body: ReactNode;
+  // Render contract (the actual black-screen root cause lives here, so read
+  // carefully): the <video> element MUST stay mounted in every state, hidden
+  // until granted. start() attaches the stream to videoRef on mount, but the
+  // previous code only mounted <video> after 'granted' -- so the ref was
+  // always null on the first pass: the old code skipped the attach yet set
+  // 'granted' anyway (eternal black viewfinder), and the null-guard turns
+  // that same situation into an instant error instead. Never gate the
+  // video element's existence on the state that requires it to exist.
+  // Messages render in a twin wrapper so page CSS keeps working unchanged.
+  const granted = state === 'granted';
+  let message: ReactNode = null;
   if (state === 'requesting') {
-    body = <p className={className ?? 'text-sm text-gray-500'}>Requesting camera access…</p>;
+    message = <p>Requesting camera access…</p>;
   } else if (state === 'denied') {
-    body = (
-      <p className={className ?? 'text-sm text-red-600'}>
+    message = (
+      <p className="text-sm text-red-600">
         Camera access denied. Your browser usually will not re-prompt automatically — check the
         camera permission for this site in your browser&apos;s address-bar / site-settings icon, then
         reload this page.
       </p>
     );
   } else if (state === 'no-camera') {
-    body = <p className={className ?? 'text-sm text-red-600'}>No camera was found on this device.</p>;
+    message = <p className="text-sm text-red-600">No camera was found on this device.</p>;
   } else if (state === 'blocked') {
-    body = (
-      <div className={className}>
+    message = (
+      <div>
         <p className="text-sm font-semibold text-amber-700">
           The camera opened but is not sending any picture — it may be in use
           by another tab or app, blocked by the OS, or a virtual camera with
@@ -311,8 +318,8 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
             !!navigator.mediaDevices,
           )} getUserMedia=${String(!!navigator.mediaDevices?.getUserMedia)}`
         : 'environment unknown';
-    body = (
-      <p className={className ?? 'text-sm text-red-600'}>
+    message = (
+      <p className="text-sm text-red-600">
         Could not access the camera. This requires a secure (HTTPS) connection and a browser that
         supports camera access.
         <br />
@@ -322,19 +329,20 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
         </span>
       </p>
     );
-  } else {
-    body = (
-      <div className={className}>
-        <video ref={videoRef} className="w-full rounded-lg bg-black" playsInline muted autoPlay />
-        <canvas ref={canvasRef} className="hidden" />
-      </div>
-    );
   }
 
   return (
     <>
-      {body}
-      <details className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-left">
+      <div className={className} style={granted ? undefined : { display: 'none' }}>
+        <video ref={videoRef} className="w-full rounded-lg bg-black" playsInline muted autoPlay />
+        <canvas ref={canvasRef} className="hidden" />
+      </div>
+      {!granted && <div className={className}>{message}</div>}
+      {/* Debug-log panel: absolutely positioned ABOVE the video wrapper with
+          a real z-index. The previous in-flow version painted underneath the
+          absolutely-positioned wrapper (which covers the whole frame), so it
+          looked like a static tag and never received clicks. */}
+      <details className="absolute inset-x-0 bottom-0 z-30 max-h-[70%] overflow-y-auto border-t border-gray-200 bg-white/95 px-3 py-2 text-left">
         <summary className="cursor-pointer text-xs font-semibold text-gray-600">
           Camera debug log ({logEntries.length})
         </summary>
