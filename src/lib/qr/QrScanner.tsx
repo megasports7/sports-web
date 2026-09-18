@@ -46,6 +46,10 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
   }, [onScan]);
 
   const [state, setState] = useState<CameraState>('requesting');
+  // Raw failure reason for the diagnostics line in the 'error' UI below --
+  // without it we cannot tell "no mediaDevices API" apart from an exotic
+  // getUserMedia error name on a user's actual device.
+  const [failureDetail, setFailureDetail] = useState<string | null>(null);
   // Bump to re-run the start effect below (the "Try again" path) without
   // unmounting the component -- remounting would also work but loses the
   // onScan closure wiring this component deliberately preserves.
@@ -68,7 +72,10 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
 
     async function start() {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setState('error');
+        if (!cancelled) {
+          setFailureDetail('mediaDevices/getUserMedia API absent');
+          setState('error');
+        }
         return;
       }
       let stream: MediaStream;
@@ -80,6 +87,7 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
       } catch (err) {
         if (cancelled) return;
         const name = (err as DOMException)?.name;
+        const msg = (err as Error)?.message;
         if (name === 'NotAllowedError' || name === 'PermissionDeniedError') setState('denied');
         else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') setState('no-camera');
         // NotReadableError: permission was granted but the OS/driver would
@@ -88,7 +96,12 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
         // no device satisfies the request. Both are retryable device states,
         // not a missing secure context, so they share the 'blocked' UI.
         else if (name === 'NotReadableError' || name === 'OverconstrainedError') setState('blocked');
-        else setState('error');
+        else {
+          setFailureDetail(
+            `getUserMedia threw ${name || 'unknown'}${msg ? `: ${msg}` : ''}`,
+          );
+          setState('error');
+        }
         return;
       }
       if (cancelled) {
@@ -243,10 +256,24 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
     );
   }
   if (state === 'error') {
+    // Live environment facts, not guesses: protocol/secure-context and API
+    // presence are evaluated in the user's own browser at render time, so a
+    // screenshot of this message tells us exactly which precondition failed.
+    const secure =
+      typeof window !== 'undefined'
+        ? `protocol=${window.location.protocol} secure=${String(window.isSecureContext)} mediaDevices=${String(
+            !!navigator.mediaDevices,
+          )} getUserMedia=${String(!!navigator.mediaDevices?.getUserMedia)}`
+        : 'environment unknown';
     return (
       <p className={className ?? 'text-sm text-red-600'}>
         Could not access the camera. This requires a secure (HTTPS) connection and a browser that
         supports camera access.
+        <br />
+        <span className="text-xs opacity-80">
+          Diagnostics: {secure}
+          {failureDetail ? ` (${failureDetail})` : ''}
+        </span>
       </p>
     );
   }
