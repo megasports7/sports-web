@@ -67,15 +67,6 @@ function PinIcon() {
     </svg>
   );
 }
-function ChevronIcon() {
-  // Intrinsic dimensions on the element itself (not only CSS): icon sizing
-  // must never depend on stylesheet scoping to be correct.
-  return (
-    <svg width={16} height={16} viewBox="0 0 20 20" fill="none">
-      <path d="m8 5 5 5-5 5" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 function CheckIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none">
@@ -166,8 +157,8 @@ export default function AdminDashboardPage() {
                   {data[m.key]} {m.suffix}
                 </span>
               </span>
-              <span className="chevron" style={{ width: 16, height: 16, overflow: 'hidden' }}>
-                <ChevronIcon />
+              <span className="go" aria-hidden="true">
+                ›
               </span>
             </Link>
           ))}
@@ -386,7 +377,7 @@ export default function AdminDashboardPage() {
           background: var(--color-surface);
           border: 1px solid rgba(22, 24, 29, 0.05);
           border-radius: 18px;
-          padding: 15px 18px;
+          padding: 12px 16px;
           text-decoration: none;
           color: inherit;
           box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -12px rgba(22, 24, 29, 0.14);
@@ -411,15 +402,12 @@ export default function AdminDashboardPage() {
           font-size: 12.5px;
           color: var(--color-muted);
         }
-        .chevron {
+        .go {
           flex-shrink: 0;
-          width: 16px;
-          height: 16px;
+          font-size: 20px;
+          font-weight: 700;
+          line-height: 1;
           color: #9aa0ac;
-        }
-        .chevron :global(svg) {
-          width: 100%;
-          height: 100%;
         }
 
         .people-list {
