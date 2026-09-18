@@ -166,7 +166,7 @@ export default function AdminDashboardPage() {
                   {data[m.key]} {m.suffix}
                 </span>
               </span>
-              <span className="chevron">
+              <span className="chevron" style={{ width: 16, height: 16, overflow: 'hidden' }}>
                 <ChevronIcon />
               </span>
             </Link>
