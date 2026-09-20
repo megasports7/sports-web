@@ -2,8 +2,16 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
-import { downloadCertificateImage } from '@/lib/certificateDownload';
+import { certBackgroundFor, certDescriptionFor, downloadCertificateImage } from '@/lib/certificateDownload';
 import type { Batch } from '@/lib/types';
+
+type TierFilter = 'all' | 'gold' | 'silver' | 'bronze' | 'participation';
+
+function tierOf(cert: Record<string, unknown>): TierFilter {
+  const v = String(cert.level ?? cert.position ?? cert.certificate_type ?? '').toLowerCase();
+  if (v === 'gold' || v === 'silver' || v === 'bronze') return v;
+  return 'participation';
+}
 
 export default function OrganizerCertificatesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
@@ -29,6 +37,9 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
   const [generating, setGenerating] = useState(false);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
 
+  const [tierFilter, setTierFilter] = useState<TierFilter>('all');
+  const [previewCert, setPreviewCert] = useState<Record<string, unknown> | null>(null);
+
   useEffect(() => {
     organizerApi.event(eventId).then((res) => {
       if (res.success && res.data) setEventName(res.data.event_name);
@@ -44,6 +55,18 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
       })
       .finally(() => setLoadingBatches(false));
   }, [eventId]);
+
+  // Refetch the issued list for a batch (reused after Generate/Regenerate
+  // so counts, tiers, and rows update without manual re-select).
+  async function fetchCertificates(batchId: string) {
+    const res = await organizerApi.getCertificates(eventId, batchId);
+    if (res.success && res.data) {
+      setCertificates(res.data);
+      setCertsError(null);
+    } else {
+      setCertsError(res.message || 'Could not load certificates');
+    }
+  }
 
   // No synchronous setState anywhere in this effect body (not even
   // setLoadingCerts(true) before the fetch starts) -- react-hooks/
@@ -109,15 +132,44 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
     }
   }
 
+  // Organizer authority gate (mobile parity: BatchCertificates
+  // handleGenerateCertificates) -- issuance happens ONLY on this click,
+  // never automatically. Regenerate overwrites via p_overwrite; tiers are
+  // always recalculated server-side from current match results.
   async function handleGenerate() {
+    if (!selectedBatchId || generating) return;
+    const isRegenerate = certificates.length > 0;
+    const ok = window.confirm(
+      isRegenerate
+        ? `Overwrite all ${certificates.length} existing certificate${certificates.length !== 1 ? 's' : ''} in this batch? Tiers are recalculated from current match results. This cannot be undone.`
+        : 'Issue certificates to all players in this batch? Each player automatically receives the correct tier (Gold, Silver, Bronze, or Participation) based on match results.',
+    );
+    if (!ok) return;
     setGenerating(true);
     setGenerateMessage(null);
-    const res = await organizerApi.generateCertificates(selectedBatchId);
+    const res = await organizerApi.generateCertificates(selectedBatchId, { overwrite: isRegenerate });
     setGenerating(false);
-    setGenerateMessage(res.message || (res.success ? 'Done.' : 'Could not generate certificates.'));
+    if (res.success && res.data) {
+      const { created = 0, skipped = 0, updated = 0 } = res.data;
+      setGenerateMessage(
+        isRegenerate
+          ? `${updated} certificate${updated !== 1 ? 's' : ''} updated${created > 0 ? `, ${created} newly created` : ''}.`
+          : `${created} certificate${created !== 1 ? 's' : ''} issued${skipped > 0 ? `, ${skipped} already existed` : ''}.`,
+      );
+      await fetchCertificates(selectedBatchId);
+    } else {
+      setGenerateMessage(res.message || 'Could not generate certificates.');
+    }
   }
 
   if (loadingBatches) return <p className="text-muted">Loading batches…</p>;
+
+  const tierCounts: Record<TierFilter, number> = { all: certificates.length, gold: 0, silver: 0, bronze: 0, participation: 0 };
+  for (const c of certificates) tierCounts[tierOf(c)] += 1;
+  const visibleCerts = tierFilter === 'all' ? certificates : certificates.filter((c) => tierOf(c) === tierFilter);
+  const isRegenerate = certificates.length > 0;
+  const previewLevel = previewCert ? tierOf(previewCert) : 'participation';
+  const previewName = String(previewCert?.player_name ?? 'Player');
 
   return (
     <div className="page">
@@ -146,10 +198,34 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
         )}
 
         <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating || !selectedBatchId}>
-          {generating ? 'Generating…' : 'Generate certificates'}
+          {generating ? 'Generating…' : isRegenerate ? `Regenerate certificates (${certificates.length} existing)` : 'Generate certificates'}
         </button>
         {generateMessage && <div className="pending-note">{generateMessage}</div>}
       </div>
+
+      {selectedBatchId && certificates.length > 0 && (
+        <div className="card">
+          <div className="tier-counts" aria-label="Certificates by tier">
+            {(['gold', 'silver', 'bronze', 'participation'] as const).map((t) => (
+              <span key={t} className="tier-count">
+                <strong>{tierCounts[t]}</strong> {t === 'participation' ? 'Participation' : t[0].toUpperCase() + t.slice(1)}
+              </span>
+            ))}
+          </div>
+          <div className="chips" role="group" aria-label="Filter certificates by tier">
+            {(['all', 'gold', 'silver', 'bronze', 'participation'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={t === tierFilter ? 'chip chip-active' : 'chip'}
+                onClick={() => setTierFilter(t)}
+              >
+                {t === 'all' ? `All (${tierCounts.all})` : `${t[0].toUpperCase() + t.slice(1)} (${tierCounts[t]})`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {selectedBatchId &&
         (loadingCerts ? (
@@ -158,9 +234,11 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
           <p className="text-corner-red">{certsError}</p>
         ) : certificates.length === 0 ? (
           <p className="text-muted">No certificates for this batch yet.</p>
+        ) : visibleCerts.length === 0 ? (
+          <p className="text-muted">No certificates in this tier.</p>
         ) : (
           <div className="cert-list">
-            {certificates.map((c) => {
+            {visibleCerts.map((c) => {
               const certId = String(c.cert_id ?? c.certificate_id ?? '');
               const playerName = (c.player_name as string) || 'Unknown player';
               const levelOrPosition = (c.level as string) || (c.position as string) || (c.certificate_type as string) || '-';
@@ -171,6 +249,9 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
                     <span className="c-level">{levelOrPosition}</span>
                   </div>
                   <span className="c-actions">
+                    <button type="button" className="btn-preview" onClick={() => setPreviewCert(c)}>
+                      Preview
+                    </button>
                     <button type="button" className="btn-view" disabled={viewBusyId === certId} onClick={() => handleView(c)}>
                       {viewBusyId === certId ? 'Opening…' : 'View'}
                     </button>
@@ -183,6 +264,35 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
             })}
           </div>
         ))}
+
+      {previewCert && (
+        <div className="modal-backdrop" onClick={() => setPreviewCert(null)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Certificate preview">
+            <div className="modal-head">
+              <strong>Certificate preview</strong>
+              <button type="button" className="btn-download" onClick={() => setPreviewCert(null)}>
+                Close
+              </button>
+            </div>
+            <div className="preview-wrap">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={certBackgroundFor(previewLevel)} alt={`${previewLevel} certificate`} className="preview-bg" />
+              <div className="preview-name">{previewName}</div>
+              <div className="preview-desc">{certDescriptionFor(previewLevel, eventName || 'Event')}</div>
+            </div>
+            <button
+              type="button"
+              className="btn-view"
+              disabled={dlBusyId === String(previewCert.cert_id ?? previewCert.certificate_id ?? '')}
+              onClick={() => {
+                handleDownload(previewCert);
+              }}
+            >
+              {dlBusyId === String(previewCert.cert_id ?? previewCert.certificate_id ?? '') ? 'Working…' : 'Download JPEG'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
 
@@ -361,6 +471,118 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
           display: flex;
           gap: 8px;
           flex-shrink: 0;
+        }
+        .btn-preview {
+          flex-shrink: 0;
+          border: 1.5px solid var(--color-line);
+          border-radius: 10px;
+          padding: 8px 16px;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #3a3d45;
+          cursor: pointer;
+          font-family: inherit;
+          background: var(--color-surface);
+        }
+        .btn-preview:hover {
+          background: var(--color-bg);
+        }
+
+        .tier-counts {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 14px;
+          font-size: 13px;
+          color: var(--color-muted);
+        }
+        .tier-count strong {
+          color: var(--color-ink);
+          font-size: 15px;
+          margin-right: 4px;
+        }
+        .chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .chip {
+          border: 1.5px solid var(--color-line);
+          border-radius: 999px;
+          padding: 6px 14px;
+          font-size: 12.5px;
+          font-weight: 700;
+          color: #3a3d45;
+          cursor: pointer;
+          font-family: inherit;
+          background: var(--color-surface);
+        }
+        .chip-active {
+          background: var(--color-ink);
+          border-color: var(--color-ink);
+          color: #fff;
+        }
+
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(10, 12, 16, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 60;
+        }
+        .modal-sheet {
+          background: var(--color-surface);
+          border-radius: 18px;
+          padding: 18px;
+          max-width: 560px;
+          width: 100%;
+          max-height: 90vh;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .modal-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 15px;
+        }
+        .preview-wrap {
+          position: relative;
+          width: 100%;
+          border-radius: 12px;
+          overflow: hidden;
+        }
+        .preview-bg {
+          display: block;
+          width: 100%;
+          height: auto;
+        }
+        .preview-name {
+          position: absolute;
+          left: 30%;
+          right: 30%;
+          top: 38%;
+          text-align: center;
+          font-family: Georgia, serif;
+          font-style: italic;
+          font-weight: 700;
+          font-size: clamp(14px, 4vw, 24px);
+          color: #1c1a14;
+        }
+        .preview-desc {
+          position: absolute;
+          left: 28%;
+          right: 28%;
+          top: 57%;
+          text-align: center;
+          font-family: Georgia, serif;
+          font-style: italic;
+          font-size: clamp(10px, 2.6vw, 15px);
+          color: #3a352a;
         }
 
         .toast {

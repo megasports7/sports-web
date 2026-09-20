@@ -787,17 +787,17 @@ export const organizerApi = {
    *  and defaults to null server-side -- deliberate per the contract's §5/
    *  Decision #7 "ship with nulls for now" call (web has no certificate-
    *  designer form yet), not an oversight. */
-  generateCertificates(batchId: string): Promise<ApiResponse<{ created: number; skipped: number }>> {
+  generateCertificates(batchId: string, opts?: { overwrite?: boolean }): Promise<ApiResponse<{ created: number; skipped: number; updated: number }>> {
     return (async () => {
       if (!batchId) {
         return { success: false, message: 'A batch must be selected to generate certificates' };
       }
       const supabase = createClient();
-      const { data: result, error } = await supabase.rpc('issue_batch_certificates', { p_batch_id: batchId });
-      if (error) return toApiResponse<{ created: number; skipped: number }>({ data: null, error });
+      const { data: result, error } = await supabase.rpc('issue_batch_certificates', { p_batch_id: batchId, p_overwrite: !!opts?.overwrite });
+      if (error) return toApiResponse<{ created: number; skipped: number; updated: number }>({ data: null, error });
       return {
         success: true,
-        data: { created: result.created, skipped: result.skipped },
+        data: { created: result.created ?? 0, skipped: result.skipped ?? 0, updated: result.updated ?? 0 },
         message: `${result.created} certificate(s) issued${result.skipped ? `, ${result.skipped} already existed` : ''}`,
       };
     })();
