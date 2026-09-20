@@ -57,6 +57,19 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   const [replaceOldId, setReplaceOldId] = useState('');
   const [replaceNewId, setReplaceNewId] = useState('');
 
+  // Match-timer state. The persisted base is the match row's updated_at at
+  // the scheduled -> in_progress transition (returned by start_match as
+  // started_at; matches has no started_at column and none was added).
+  // timerBase pins the base locally so a post-start refetch can't shift the
+  // display; frozenElapsed preserves the visible time after the organizer
+  // stops the timer by clicking it. pageLoadedAt is only the fallback base
+  // for in-progress rows that carry no updated_at (never updated since
+  // creation) — they count from page load rather than showing a stuck clock.
+  const [timerBase, setTimerBase] = useState<Record<string, number>>({});
+  const [frozenElapsed, setFrozenElapsed] = useState<Record<string, number>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [pageLoadedAt] = useState(() => Date.now());
+
   // Inlined directly in the effect body -- calling ANY locally-defined
   // function that sets state (even after an await) from inside useEffect
   // trips react-hooks/set-state-in-effect, regardless of declaration order.
@@ -86,6 +99,39 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   function showToast(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2200);
+  }
+
+  // One shared 1s tick while any timer is running — not one interval per
+  // match. Stops entirely once every timer is stopped/frozen.
+  const anyTimerRunning = matches.some((m) => m.status === 'in_progress' && frozenElapsed[m.match_id] === undefined);
+  useEffect(() => {
+    if (!anyTimerRunning) return;
+    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [anyTimerRunning]);
+
+  function timerBaseMs(match: OrganizerMatch): number {
+    const local = timerBase[match.match_id];
+    if (local !== undefined) return local;
+    if (match.updated_at) {
+      const parsed = Date.parse(match.updated_at);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    return pageLoadedAt;
+  }
+
+  function elapsedMs(match: OrganizerMatch): number {
+    const frozen = frozenElapsed[match.match_id];
+    if (frozen !== undefined) return frozen;
+    return Math.max(0, nowMs - timerBaseMs(match));
+  }
+
+  function formatHHMMSS(totalMs: number): string {
+    const totalSeconds = Math.floor(totalMs / 1000);
+    const hh = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+    const ss = String(totalSeconds % 60).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
   }
 
   async function refreshMatches() {
@@ -134,11 +180,37 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     const res = await organizerApi.startConducting(id, match.match_id);
     setBusy(false);
     if (res.success) {
+      // Pin the server-returned transition stamp as the timer base so the
+      // display is anchored to persisted match state, not to local click
+      // time; refreshMatches then flips the row to in_progress, which swaps
+      // the Start button for the running timer below.
+      const parsed = res.data?.started_at ? Date.parse(res.data.started_at) : NaN;
+      // nowMs (not Date.now(): the purity lint forbids impure calls in
+      // component scope) — equals the click time here because the tick
+      // updates it every second while any timer runs, and elapsed is 0
+      // at start regardless of small staleness when none runs.
+      const base = Number.isNaN(parsed) ? nowMs : parsed;
+      setTimerBase((prev) => ({ ...prev, [match.match_id]: base }));
+      setFrozenElapsed((prev) => {
+        if (prev[match.match_id] === undefined) return prev;
+        const next = { ...prev };
+        delete next[match.match_id];
+        return next;
+      });
+      setNowMs(base);
       setActionMessage({ matchId: match.match_id, text: 'Match started.' });
       refreshMatches();
     } else {
       setActionMessage({ matchId: match.match_id, text: res.message || 'Could not start match', error: true });
     }
+  }
+
+  // Clicking the running timer stops it locally and preserves the elapsed
+  // time on screen. No server write: match state already transitioned to
+  // in_progress at Start; stopping the display clock is presentation-only.
+  function handleStopTimer(match: OrganizerMatch) {
+    const elapsed = Math.max(0, nowMs - timerBaseMs(match));
+    setFrozenElapsed((prev) => ({ ...prev, [match.match_id]: elapsed }));
   }
 
   async function handleReopen(match: OrganizerMatch) {
@@ -291,6 +363,9 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                     .filter((m) => sideOf(m) === section.side && (m.round_number ?? 0) === round)
                     .map((match, i) => {
                   const canStart = match.status === 'scheduled' && !!match.player1_id && !!match.player2_id;
+                  const showTimer = match.status === 'in_progress';
+                  const timerStopped = frozenElapsed[match.match_id] !== undefined;
+                  const timerLabel = showTimer ? formatHHMMSS(elapsedMs(match)) : '';
                   const canRecord = match.status === 'scheduled' || match.status === 'in_progress';
                   const canReopen = match.status === 'completed';
                   const canAdvance = match.status !== 'completed';
@@ -328,6 +403,21 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                             Start
                           </button>
                         )}
+                        {showTimer &&
+                          (timerStopped ? (
+                            <span className="btn-action-primary timer timer-stopped" role="timer" aria-label={`Match timer stopped at ${timerLabel}`}>
+                              {timerLabel}
+                            </span>
+                          ) : (
+                            <button
+                              className="btn-action-primary timer"
+                              onClick={() => handleStopTimer(match)}
+                              title="Stop timer"
+                              aria-label={`Match timer running: ${timerLabel}. Activate to stop.`}
+                            >
+                              {timerLabel}
+                            </button>
+                          ))}
                         {canRecord && (
                           <button
                             className="btn-action-primary"
@@ -723,6 +813,23 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
         }
         .btn-action-primary:disabled {
           opacity: 0.6;
+          cursor: default;
+        }
+        .btn-action-primary.timer {
+          display: inline-block;
+          text-align: center;
+          font-family: var(--font-mono);
+          font-variant-numeric: tabular-nums;
+          min-width: 96px;
+          letter-spacing: 0.5px;
+        }
+        button.btn-action-primary.timer:hover {
+          filter: brightness(0.96);
+        }
+        button.btn-action-primary.timer:active {
+          transform: translateY(1px);
+        }
+        span.btn-action-primary.timer-stopped {
           cursor: default;
         }
         .chip {

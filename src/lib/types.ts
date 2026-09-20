@@ -315,6 +315,10 @@ export interface OrganizerMatch {
   player2_score?: number;
   status?: string;
   scheduled_at?: string;
+  // Raw matches row carries this (batchMatches selects '*'); the manage
+  // page derives the in-progress timer base from it when no local start
+  // timestamp exists yet (e.g. match started on another device).
+  updated_at?: string;
 }
 
 // referee.api.ts's matches() returns the identical shape (same raw matches

@@ -970,24 +970,32 @@ export const organizerApi = {
     })();
   },
 
-  /** RLS re-derives batch ownership from the match row itself; batchId isn't
-   *  needed by the update, kept on the signature for call-site parity. */
-  startConducting(batchId: string, matchId: string): Promise<ApiResponse<{ match_id: string; status: string }>> {
+  /** start_match(p_match_id) — the guarded RPC for organizer Start.
+   *
+   *  Was a raw `matches UPDATE status='in_progress'`, which broke when
+   *  20260913110000 revoked matches INSERT/UPDATE from `authenticated`
+   *  (fail-closed allow-list: only SECURITY DEFINER RPCs may write matches).
+   *  The raw path is NOT re-granted — that would reopen the exact hole that
+   *  migration closed. start_match enforces the same ownership model as the
+   *  sibling match RPCs (organizer/associate via owns_batch_of_match, admin;
+   *  referee excluded like force_advance_match/reopen_match) and returns the
+   *  row's updated_at as started_at, which the batch-manage page uses as the
+   *  persisted HH:MM:SS timer base. batchId stays on the signature for
+   *  call-site parity only. */
+  startConducting(batchId: string, matchId: string): Promise<ApiResponse<{ match_id: string; status: string; started_at?: string }>> {
     return (async () => {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from('matches')
-        .update({ status: 'in_progress' })
-        .eq('id', matchId)
-        .select('id, status')
-        .maybeSingle();
-      if (error) return toApiResponse<{ match_id: string; status: string }>({ data: null, error });
+      const { data, error } = await supabase.rpc('start_match', { p_match_id: matchId });
+      if (error) return toApiResponse<{ match_id: string; status: string; started_at?: string }>({ data: null, error });
       if (!data)
-        return toApiResponse<{ match_id: string; status: string }>({
+        return toApiResponse<{ match_id: string; status: string; started_at?: string }>({
           data: null,
           error: { message: 'Match not found or not authorized' },
         });
-      return toApiResponse({ data: { match_id: data.id, status: data.status }, error: null });
+      return toApiResponse({
+        data: { match_id: data.match_id, status: data.status, started_at: data.started_at ?? undefined },
+        error: null,
+      });
     })();
   },
 
