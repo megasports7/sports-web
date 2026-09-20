@@ -104,6 +104,7 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
     if (res.success && res.data) {
       window.open(res.data.url, '_blank', 'noopener,noreferrer');
     } else {
+      console.debug('[certs] view failed', { certId, message: res.message });
       showToast(res.message || 'Could not open certificate');
     }
   }
@@ -126,6 +127,7 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
       });
       showToast('Certificate downloaded');
     } catch (err) {
+      console.debug('[certs] download failed', { certId, error: err instanceof Error ? err.message : err });
       showToast(err instanceof Error ? err.message : 'Could not download certificate');
     } finally {
       setDlBusyId(null);
@@ -139,6 +141,7 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
   async function handleGenerate() {
     if (!selectedBatchId || generating) return;
     const isRegenerate = certificates.length > 0;
+    console.debug('[certs] generate click', { eventId, batchId: selectedBatchId, format: selectedFormat, isRegenerate });
     const ok = window.confirm(
       isRegenerate
         ? `Overwrite all ${certificates.length} existing certificate${certificates.length !== 1 ? 's' : ''} in this batch? Tiers are recalculated from current match results. This cannot be undone.`
@@ -149,6 +152,7 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
     setGenerateMessage(null);
     const res = await organizerApi.generateCertificates(selectedBatchId, { overwrite: isRegenerate });
     setGenerating(false);
+    console.debug('[certs] generate result', { batchId: selectedBatchId, success: res.success, message: res.message, data: res.data });
     if (res.success && res.data) {
       const { created = 0, skipped = 0, updated = 0 } = res.data;
       setGenerateMessage(
@@ -170,6 +174,19 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
   const isRegenerate = certificates.length > 0;
   const previewLevel = previewCert ? tierOf(previewCert) : 'participation';
   const previewName = String(previewCert?.player_name ?? 'Player');
+
+  // Pre-flight format gate: medals are a single-elimination computation
+  // (server guard refuses other formats). Gate here so the organizer gets
+  // a batch-specific reason instead of a post-click RPC error. Unknown
+  // (null) format falls through to the RPC, preserving old behaviour.
+  const selectedBatch = batches.find((b) => b.batch_id === selectedBatchId) ?? null;
+  const selectedFormat = selectedBatch?.tournament_format ?? null;
+  const isEligible = !selectedBatch || selectedFormat === null || selectedFormat === 'single_elimination';
+  const formatLabel =
+    selectedFormat === 'round_robin' ? 'Round Robin'
+    : selectedFormat === 'double_elimination' ? 'Double Elimination'
+    : selectedFormat === 'single_elimination' ? 'Single Elimination'
+    : 'this format';
 
   return (
     <div className="page">
@@ -197,10 +214,15 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
           </label>
         )}
 
-        <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating || !selectedBatchId}>
+        <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating || !selectedBatchId || !isEligible}>
           {generating ? 'Generating…' : isRegenerate ? `Regenerate certificates (${certificates.length} existing)` : 'Generate certificates'}
         </button>
         {generateMessage && <div className="pending-note">{generateMessage}</div>}
+        {selectedBatch && !isEligible && (
+          <div className="pending-note">
+            Certificates are issued for single-elimination batches — ‘{selectedBatch.batch_name}’ is {formatLabel}. Select a single-elimination batch to issue.
+          </div>
+        )}
       </div>
 
       {selectedBatchId && certificates.length > 0 && (

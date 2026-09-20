@@ -794,7 +794,10 @@ export const organizerApi = {
       }
       const supabase = createClient();
       const { data: result, error } = await supabase.rpc('issue_batch_certificates', { p_batch_id: batchId, p_overwrite: !!opts?.overwrite });
-      if (error) return toApiResponse<{ created: number; skipped: number; updated: number }>({ data: null, error });
+      if (error) {
+        console.error('[certs] generate failed', { batchId, overwrite: !!opts?.overwrite, message: (error as { message?: string }).message });
+        return toApiResponse<{ created: number; skipped: number; updated: number }>({ data: null, error });
+      }
       return {
         success: true,
         data: { created: result.created ?? 0, skipped: result.skipped ?? 0, updated: result.updated ?? 0 },
@@ -810,7 +813,10 @@ export const organizerApi = {
       if (batchId) query = query.eq('batch_id', batchId);
 
       const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) return toApiResponse<Record<string, unknown>[]>({ data: null, error });
+      if (error) {
+        console.error('[certs] list failed', { eventId, batchId, message: (error as { message?: string }).message });
+        return toApiResponse<Record<string, unknown>[]>({ data: null, error });
+      }
 
       const rows = data ?? [];
       const playerIds = Array.from(new Set(rows.map((c) => c.player_id).filter(Boolean)));
@@ -1098,6 +1104,7 @@ export const organizerApi = {
     let message = 'Could not generate a certificate link';
     if (data && typeof data.message === 'string') message = data.message;
     else if (error) message = (error as { message?: string }).message || message;
+    console.error('[certs] mint link failed', { certId, message });
     return { success: false, message };
   },
 
