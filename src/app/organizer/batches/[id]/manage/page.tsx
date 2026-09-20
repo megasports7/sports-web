@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
-import type { Batch, BatchPlayer, OrganizerMatch, Referee } from '@/lib/types';
+import type { Batch, BatchPlayer, OrganizerMatch, Referee, StandingRow } from '@/lib/types';
 
 type Panel = { matchId: string; type: 'record' | 'advance' | 'replace' };
 type ActionMessage = { matchId: string; text: string; error?: boolean };
@@ -38,6 +38,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   const [batch, setBatch] = useState<Batch | null>(null);
   const [matches, setMatches] = useState<OrganizerMatch[]>([]);
   const [players, setPlayers] = useState<BatchPlayer[]>([]);
+  const [standings, setStandings] = useState<StandingRow[]>([]);
   const [referees, setReferees] = useState<Referee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +93,13 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
       if (m.success && m.data) setMatches(m.data);
       if (p.success && p.data) setPlayers(p.data);
       if (r.success && r.data) setReferees(r.data);
+      // Standings live in rr_standings (view returns [] for non-RR), so only
+      // round-robin batches pay for the extra query.
+      if (b.success && b.data?.tournament_format === 'round_robin') {
+        organizerApi.batchStandings(id).then((s) => {
+          if (s.success && s.data) setStandings(s.data);
+        });
+      }
       setLoading(false);
     });
   }, [id]);
@@ -137,6 +145,12 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   async function refreshMatches() {
     const res = await organizerApi.batchMatches(id);
     if (res.success && res.data) setMatches(res.data);
+    // Every record/reopen/advance/replace flows through here, so the RR
+    // table stays fresh without its own refresh plumbing.
+    if (batch?.tournament_format === 'round_robin') {
+      const st = await organizerApi.batchStandings(id);
+      if (st.success && st.data) setStandings(st.data);
+    }
   }
 
   async function refreshBatch() {
@@ -282,6 +296,10 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  function playerName(playerId: string): string {
+    return players.find((p) => p.player_id === playerId)?.name ?? 'Unknown';
+  }
+
   function winnerName(match: OrganizerMatch): string | null {
     if (!match.winner_id) return null;
     if (match.winner_id === match.player1_id) return match.player1_name ?? null;
@@ -348,6 +366,41 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           </button>
         </div>
       </div>
+
+      {batch.tournament_format === 'round_robin' && (
+        <div className="card">
+          <h2>Standings</h2>
+          {standings.length === 0 ? (
+            <p className="text-muted">No decided matches yet — the table fills in as results are recorded.</p>
+          ) : (
+            <table className="standings-table">
+              <thead>
+                <tr>
+                  <th className="num">#</th>
+                  <th>Player</th>
+                  <th className="num">P</th>
+                  <th className="num">W</th>
+                  <th className="num">L</th>
+                  <th className="num">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {standings.map((row, i) => (
+                  <tr key={row.player_id} className={i === 0 && row.played > 0 ? 'leader' : ''}>
+                    <td className="num">{i + 1}</td>
+                    <td>{playerName(row.player_id)}</td>
+                    <td className="num">{row.played}</td>
+                    <td className="num">{row.wins}</td>
+                    <td className="num">{row.losses}</td>
+                    <td className="num pts">{row.points}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="standings-note">Win = 3 pts · decided matches only · level points stay level (no tie-break).</p>
+        </div>
+      )}
 
       {matches.length === 0 ? (
         <p className="text-muted">No matches yet.</p>
@@ -636,6 +689,51 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           text-transform: uppercase;
           color: #3a3d45;
           margin: 0 0 12px;
+        }
+        .standings-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13.5px;
+        }
+        .standings-table th {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+          color: var(--color-muted);
+          text-align: left;
+          padding: 6px 8px;
+          border-bottom: 1.5px solid var(--color-line);
+        }
+        .standings-table td {
+          padding: 9px 8px;
+          border-bottom: 1px solid var(--color-line);
+          color: var(--color-ink);
+        }
+        .standings-table tbody tr:last-child td {
+          border-bottom: none;
+        }
+        .standings-table .num {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+          font-family: var(--font-mono);
+          width: 44px;
+        }
+        .standings-table th:first-child,
+        .standings-table td:first-child {
+          width: 34px;
+        }
+        .standings-table tbody tr.leader td {
+          background: color-mix(in srgb, var(--color-accent-green) 8%, transparent);
+          font-weight: 700;
+        }
+        .standings-table td.pts {
+          font-weight: 800;
+        }
+        .standings-note {
+          margin: 10px 0 0;
+          font-size: 12px;
+          color: var(--color-muted);
         }
 
         .ref-row {

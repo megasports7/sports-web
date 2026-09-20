@@ -326,6 +326,18 @@ export interface OrganizerMatch {
 // keeps both call sites semantically named without duplicating the fields.
 export type RefereeMatch = OrganizerMatch;
 
+// Row of the rr_standings view (M3b §42: played/wins/losses/points,
+// win = 3 pts, decided matches only, points DESC, wins DESC). Counts arrive
+// as JSON numbers; the API mapper still coerces defensively.
+export interface StandingRow {
+  batch_id: string;
+  player_id: string;
+  played: number;
+  wins: number;
+  losses: number;
+  points: number;
+}
+
 export interface FilteredPlayer {
   registration_id: string;
   player_id: string;

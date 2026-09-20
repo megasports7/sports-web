@@ -34,6 +34,7 @@ import type {
   BatchPlayer,
   Referee,
   OrganizerMatch,
+  StandingRow,
   FilteredPlayer,
   AttendanceList,
   ConfiguredEventCategory,
@@ -964,6 +965,35 @@ export const organizerApi = {
           match_id: m.id,
           player1_name: m.player1_id ? (nameById.get(m.player1_id) ?? 'TBD') : 'TBD',
           player2_name: m.player2_id ? (nameById.get(m.player2_id) ?? 'TBD') : 'TBD',
+        })),
+        error: null,
+      });
+    })();
+  },
+
+  /** rr_standings view (M3b §42: played/wins/losses/points, win = 3 pts,
+   *  decided matches only, points DESC, wins DESC). security_invoker, so the
+   *  caller's own RLS on batch_players/matches governs and no new policies
+   *  were needed; granted to authenticated. The view itself returns [] for
+   *  non-RR batches, and callers additionally gate on the batch format. */
+  batchStandings(batchId: string): Promise<ApiResponse<StandingRow[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('rr_standings')
+        .select('batch_id, player_id, played, wins, losses, points')
+        .eq('batch_id', batchId)
+        .order('points', { ascending: false })
+        .order('wins', { ascending: false });
+      if (error) return toApiResponse<StandingRow[]>({ data: null, error });
+      return toApiResponse({
+        data: (data ?? []).map((r) => ({
+          batch_id: r.batch_id as string,
+          player_id: r.player_id as string,
+          played: Number(r.played ?? 0),
+          wins: Number(r.wins ?? 0),
+          losses: Number(r.losses ?? 0),
+          points: Number(r.points ?? 0),
         })),
         error: null,
       });
