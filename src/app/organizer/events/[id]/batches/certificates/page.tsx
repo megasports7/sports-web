@@ -175,13 +175,17 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
   const previewLevel = previewCert ? tierOf(previewCert) : 'participation';
   const previewName = String(previewCert?.player_name ?? 'Player');
 
-  // Pre-flight format gate: medals are a single-elimination computation
-  // (server guard refuses other formats). Gate here so the organizer gets
-  // a batch-specific reason instead of a post-click RPC error. Unknown
-  // (null) format falls through to the RPC, preserving old behaviour.
+  // Pre-flight format gate: issuance supports single-elimination,
+  // double-elimination, and round-robin (gold/silver + participation;
+  // bronze stays SE-only until product decides tiebreaks). Unknown format
+  // falls through to the RPC, preserving old behaviour.
   const selectedBatch = batches.find((b) => b.batch_id === selectedBatchId) ?? null;
   const selectedFormat = selectedBatch?.tournament_format ?? null;
-  const isEligible = !selectedBatch || selectedFormat === null || selectedFormat === 'single_elimination';
+  const isEligible =
+    !selectedBatch || selectedFormat === null
+    || selectedFormat === 'single_elimination'
+    || selectedFormat === 'double_elimination'
+    || selectedFormat === 'round_robin';
   const formatLabel =
     selectedFormat === 'round_robin' ? 'Round Robin'
     : selectedFormat === 'double_elimination' ? 'Double Elimination'
@@ -220,7 +224,7 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
         {generateMessage && <div className="pending-note">{generateMessage}</div>}
         {selectedBatch && !isEligible && (
           <div className="pending-note">
-            Certificates are issued for single-elimination batches — ‘{selectedBatch.batch_name}’ is {formatLabel}. Select a single-elimination batch to issue.
+            Certificates cannot be issued for ‘{selectedBatch.batch_name}’ ({formatLabel}). Select a single-elimination, double-elimination, or round-robin batch.
           </div>
         )}
       </div>
