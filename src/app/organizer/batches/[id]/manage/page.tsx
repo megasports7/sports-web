@@ -204,6 +204,17 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
       <div className="head">
         <h1>{batch.batch_name}</h1>
         {batch.category && <p>{batch.category}</p>}
+        {batch.tournament_format && batch.tournament_format !== 'single_elimination' && (
+          <p className="format-line">
+            <span className="format-pill">
+              {batch.tournament_format === 'double_elimination' ? 'Double elimination' : 'Round robin'}
+            </span>
+            {batch.bye_method && batch.bye_method !== 'random' && <span className="format-note"> · byes: {batch.bye_method}</span>}
+            {batch.tournament_format === 'double_elimination' && (
+              <span className="format-note"> · reset {batch.grand_final_reset === false ? 'off' : 'on'}</span>
+            )}
+          </p>
+        )}
       </div>
 
       <div className="card">
@@ -452,6 +463,23 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           font-size: 14px;
           color: var(--color-accent-green);
           font-weight: 700;
+        }
+        .head .format-line {
+          color: #3a3d45;
+          font-size: 12.5px;
+          font-weight: 600;
+        }
+        .format-pill {
+          display: inline-block;
+          border-radius: 999px;
+          padding: 3px 9px;
+          font-size: 11px;
+          font-weight: 800;
+          color: #3a3d45;
+          background: color-mix(in srgb, var(--color-accent-green) 12%, white);
+        }
+        .format-note {
+          font-weight: 600;
         }
 
         .card {

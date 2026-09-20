@@ -676,9 +676,16 @@ export const organizerApi = {
   },
 
   /** create_batch_with_bracket(p_event_id, p_batch_name, p_player_ids,
-   *  p_category, p_referee_id) -- category_label folds into p_category
-   *  (mobile's own documented fix for a client/server key-mismatch bug;
-   *  there is no separate category_label RPC parameter). */
+   *  p_category, p_referee_id, p_bye_method, p_seeds, p_bye_player_ids,
+   *  p_tournament_format, p_grand_final_reset) -- category_label folds into
+   *  p_category (mobile's own documented fix for a client/server key-mismatch
+   *  bug; there is no separate category_label RPC parameter).
+   *
+   *  Bracket-engine options (M3a/M3b/M3c) are all optional: omitted keys fall
+   *  through to the server defaults (single_elimination / random / reset).
+   *  seeds/bye_player_ids are sent only when non-empty; grand_final_reset is
+   *  sent only for double_elimination (the RPC rejects an explicit false for
+   *  other formats, and round_robin locks bye_method to random). */
   createBatch(data: {
     event_id: string;
     batch_name: string;
@@ -686,17 +693,28 @@ export const organizerApi = {
     category_label?: string;
     player_ids: string[];
     referee_id?: string | null;
+    tournament_format?: string;
+    bye_method?: string;
+    seeds?: string[];
+    bye_player_ids?: string[];
+    grand_final_reset?: boolean;
   }): Promise<ApiResponse<unknown>> {
     return (async () => {
       const supabase = createClient();
       const category = data.category ?? data.category_label ?? null;
-      const { data: result, error } = await supabase.rpc('create_batch_with_bracket', {
+      const payload: Record<string, unknown> = {
         p_event_id: data.event_id,
         p_batch_name: data.batch_name,
         p_player_ids: data.player_ids,
         p_category: category,
         p_referee_id: data.referee_id ?? null,
-      });
+      };
+      if (data.tournament_format) payload.p_tournament_format = data.tournament_format;
+      if (data.bye_method) payload.p_bye_method = data.bye_method;
+      if (data.seeds?.length) payload.p_seeds = data.seeds;
+      if (data.bye_player_ids?.length) payload.p_bye_player_ids = data.bye_player_ids;
+      if (data.grand_final_reset !== undefined) payload.p_grand_final_reset = data.grand_final_reset;
+      const { data: result, error } = await supabase.rpc('create_batch_with_bracket', payload);
       if (error) return toApiResponse<unknown>({ data: null, error });
       return toApiResponse({ data: result, error: null });
     })();

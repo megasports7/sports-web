@@ -241,6 +241,12 @@ export interface Batch {
   referee_name?: string | null;
   player_count?: number;
   created_at?: string;
+  // M1/M3 bracket-engine columns (batches.select('*') already returns them;
+  // typed optional so legacy rows / older selects stay valid).
+  tournament_format?: string | null;
+  bye_method?: string | null;
+  seeding_method?: string | null;
+  grand_final_reset?: boolean | null;
 }
 
 export interface BatchPlayer {

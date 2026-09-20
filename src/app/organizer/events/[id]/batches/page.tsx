@@ -21,6 +21,13 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
   // there's no pending edit for it.
   const [pendingRef, setPendingRef] = useState<Record<string, string>>({});
 
+  // Bracket-engine short labels (M1/M3 columns arrive via select('*')).
+  const FORMAT_LABELS: Record<string, string> = {
+    single_elimination: 'Single elim',
+    double_elimination: 'Double elim',
+    round_robin: 'Round robin',
+  };
+
   const loadBatches = useCallback(async () => {
     const res = await organizerApi.eventBatches(id);
     if (res.success && res.data) {
@@ -108,6 +115,14 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
                 <div className="batch-info">
                   <span className="batch-name">{b.batch_name}</span>
                   {b.batch_label && <span className="batch-cat">{b.batch_label}</span>}
+                  {b.tournament_format && (
+                    <span
+                      className="batch-format"
+                      title={b.bye_method && b.bye_method !== 'random' ? `Byes: ${b.bye_method}` : undefined}
+                    >
+                      {FORMAT_LABELS[b.tournament_format] ?? b.tournament_format}
+                    </span>
+                  )}
                 </div>
                 <div className="batch-count">
                   <span className="n">{b.player_count ?? 0}</span>
@@ -271,6 +286,16 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
           font-size: 13px;
           color: #3a3d45;
           font-weight: 500;
+        }
+        .batch-format {
+          align-self: flex-start;
+          margin-top: 3px;
+          border-radius: 999px;
+          padding: 3px 9px;
+          font-size: 11px;
+          font-weight: 800;
+          color: #3a3d45;
+          background: color-mix(in srgb, var(--color-accent-green) 12%, white);
         }
         .batch-count {
           flex-shrink: 0;

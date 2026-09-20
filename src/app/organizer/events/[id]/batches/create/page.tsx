@@ -40,6 +40,25 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
   const [byesRequired, setByesRequired] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  // Bracket-engine options (M3a/M3b/M3c). Defaults mirror the server:
+  // single elimination + random byes + grand-final reset on. seedOrder is
+  // rank-ordered (position = rank, subset allowed); manualByeIds must equal
+  // the bye count for the selected entrants at create time.
+  const [tournamentFormat, setTournamentFormat] = useState('single_elimination');
+  const [byeMethod, setByeMethod] = useState('random');
+  const [grandFinalReset, setGrandFinalReset] = useState(true);
+  const [seedOrder, setSeedOrder] = useState<string[]>([]);
+  const [manualByeIds, setManualByeIds] = useState<Set<string>>(new Set());
+
+  const isRR = tournamentFormat === 'round_robin';
+  const isDE = tournamentFormat === 'double_elimination';
+  const selectedPlayers = players.filter((p) => selected.has(p.player_id));
+  const byesForSelected = selected.size > 0 ? Math.pow(2, Math.ceil(Math.log2(selected.size))) - selected.size : 0;
+  // Selection edits can orphan ids picked earlier; the pickers render from
+  // selectedPlayers only, and create uses these pruned copies throughout.
+  const prunedSeeds = seedOrder.filter((sid) => selected.has(sid));
+  const prunedPicks = Array.from(manualByeIds).filter((pid) => selected.has(pid));
+
   const [batchName, setBatchName] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,10 +182,62 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
     });
   }
 
+  function handleFormatChange(v: string) {
+    setTournamentFormat(v);
+    // Round robin has no knockout byes: the RPC rejects any non-random
+    // bye_method, so lock it and drop any seed/pick intent (avoids sending
+    // stale ids that would fail validation).
+    if (v === 'round_robin') {
+      setByeMethod('random');
+      setSeedOrder([]);
+      setManualByeIds(new Set());
+    }
+  }
+
+  function handleByeMethodChange(v: string) {
+    setByeMethod(v);
+    if (v !== 'manual') setManualByeIds(new Set());
+    if (v !== 'seed_priority') setSeedOrder([]);
+  }
+
+  // Click order = rank order (seed 1 first); clicking a seeded player again
+  // removes it and re-ranks the rest.
+  function toggleSeed(playerId: string) {
+    setSeedOrder((prev) => (prev.includes(playerId) ? prev.filter((s) => s !== playerId) : [...prev, playerId]));
+  }
+
+  function toggleManualBye(playerId: string) {
+    setManualByeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId);
+      else next.add(playerId);
+      return next;
+    });
+  }
+
   async function handleCreate() {
     if (selected.size === 0) return;
     setCreating(true);
     setError(null);
+
+    // Bracket-engine payload: bye_method goes only to knockout formats
+    // (RR locks to random server-side); seeds/picks only when non-empty;
+    // the reset flag is DE-only (the RPC rejects an explicit false for
+    // other formats).
+    if (!isRR && byeMethod === 'manual' && prunedPicks.length !== byesForSelected) {
+      setCreating(false);
+      setError(
+        `Manual byes: pick exactly ${byesForSelected} player${byesForSelected === 1 ? '' : 's'} for ${selected.size} entrant${selected.size === 1 ? '' : 's'}`
+      );
+      return;
+    }
+    const bracketOptions = {
+      tournament_format: tournamentFormat,
+      ...(!isRR ? { bye_method: byeMethod } : {}),
+      ...(!isRR && byeMethod === 'seed_priority' && prunedSeeds.length ? { seeds: prunedSeeds } : {}),
+      ...(!isRR && byeMethod === 'manual' && prunedPicks.length ? { bye_player_ids: prunedPicks } : {}),
+      ...(isDE ? { grand_final_reset: grandFinalReset } : {}),
+    };
 
     // Phase 7 v2: creation goes through the sanctioned
     // create_batch_with_bracket RPC. Direct batches INSERT is revoked by
@@ -189,6 +260,7 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
         batch_name: finalName,
         category_label: finalName,
         player_ids: Array.from(selected),
+        ...bracketOptions,
       });
       setCreating(false);
       if (res.success) {
@@ -208,6 +280,7 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
       batch_name: finalName,
       category_label: label,
       player_ids: Array.from(selected),
+      ...bracketOptions,
     });
     setCreating(false);
     if (res.success) {
@@ -332,7 +405,8 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
 
-          {byesRequired > 0 && <div className="byes-note">⚠ {byesRequired} bye{byesRequired === 1 ? '' : 's'} required — odd number of players in this bracket</div>}
+          {!isRR && byesRequired > 0 && <div className="byes-note">⚠ {byesRequired} bye{byesRequired === 1 ? '' : 's'} required — odd number of players in this bracket</div>}
+          {isRR && <div className="byes-note">Round robin — no byes; every entrant plays every other entrant.</div>}
 
           {loadingPlayers ? (
             <p className="text-muted">Loading players…</p>
@@ -353,6 +427,90 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
           )}
         </div>
       )}
+
+      <div className="card">
+        <h2>Bracket options</h2>
+        <div className="field-grid">
+          <label className="field">
+            <span>Tournament format</span>
+            <select value={tournamentFormat} onChange={(e) => handleFormatChange(e.target.value)}>
+              <option value="single_elimination">Single elimination</option>
+              <option value="double_elimination">Double elimination</option>
+              <option value="round_robin">Round robin</option>
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Bye method{isRR ? ' (locked — RR has no byes)' : ''}</span>
+            <select value={byeMethod} onChange={(e) => handleByeMethodChange(e.target.value)} disabled={isRR}>
+              <option value="random">Random</option>
+              <option value="balanced">Balanced</option>
+              <option value="seed_priority">Seed priority</option>
+              <option value="manual">Manual pick</option>
+            </select>
+          </label>
+        </div>
+
+        {isDE && (
+          <label className="check-row">
+            <input type="checkbox" checked={grandFinalReset} onChange={(e) => setGrandFinalReset(e.target.checked)} />
+            <span>Grand-final reset (losers-bracket winner forces a decider on first final win)</span>
+          </label>
+        )}
+
+        {!isRR && byeMethod === 'seed_priority' && (
+          <>
+            <p className="text-muted" style={{ fontSize: 12 }}>
+              Tap players in rank order (seed 1 first). A subset is enough — unlisted players fill remaining byes randomly.
+            </p>
+            {selectedPlayers.length === 0 ? (
+              <p className="text-muted">Select players above to rank seeds.</p>
+            ) : (
+              <div className="player-list">
+                {selectedPlayers.map((p) => {
+                  const rank = prunedSeeds.indexOf(p.player_id);
+                  return (
+                    <label className="player-row" key={p.player_id}>
+                      <input type="checkbox" checked={rank !== -1} onChange={() => toggleSeed(p.player_id)} />
+                      <span>
+                        <span className="p-name">
+                          {rank !== -1 ? `#${rank + 1} ` : ''}
+                          {p.player_name}
+                        </span>
+                        <span className="p-cat">{[p.event_category, p.age_category, p.weight_category, p.seni_category].filter(Boolean).join(' · ')}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {!isRR && byeMethod === 'manual' && (
+          <>
+            <p className="text-muted" style={{ fontSize: 12 }}>
+              {prunedPicks.length} of {byesForSelected} byes assigned
+              {byesForSelected === 0 ? ' — no byes needed for this entrant count.' : '.'}
+            </p>
+            {selectedPlayers.length === 0 ? (
+              <p className="text-muted">Select players above to assign byes.</p>
+            ) : (
+              <div className="player-list">
+                {selectedPlayers.map((p) => (
+                  <label className="player-row" key={p.player_id}>
+                    <input type="checkbox" checked={manualByeIds.has(p.player_id)} onChange={() => toggleManualBye(p.player_id)} />
+                    <span>
+                      <span className="p-name">{p.player_name}</span>
+                      <span className="p-cat">{[p.event_category, p.age_category, p.weight_category, p.seni_category].filter(Boolean).join(' · ')}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       <div className="card">
         <label className="field">
@@ -436,6 +594,26 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
           outline: none;
           border-color: var(--color-accent-green);
           box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-green) 14%, transparent);
+        }
+        .field select:disabled {
+          background: #f1efeb;
+          color: #a8a49b;
+          cursor: default;
+        }
+        .check-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #3a3d45;
+          cursor: pointer;
+        }
+        .check-row input {
+          width: 17px;
+          height: 17px;
+          accent-color: var(--color-accent-green);
+          flex-shrink: 0;
         }
 
         .btn-primary {
