@@ -7,6 +7,31 @@ import type { Batch, BatchPlayer, OrganizerMatch, Referee } from '@/lib/types';
 type Panel = { matchId: string; type: 'record' | 'advance' | 'replace' };
 type ActionMessage = { matchId: string; text: string; error?: boolean };
 
+// bracket_side/bye_type arrive via batchMatches' select('*') but aren't on
+// the shared OrganizerMatch type yet -- kept page-local so this change stays
+// a single hunk (the pending type hunks elsewhere are another task's).
+type MatchWithSide = OrganizerMatch & { bracket_side?: string | null; bye_type?: string | null };
+
+type BracketSide = 'W' | 'L' | 'GF' | 'R';
+
+function sideOf(match: OrganizerMatch): BracketSide {
+  const s = (match as MatchWithSide).bracket_side;
+  return s === 'L' || s === 'GF' || s === 'R' ? s : 'W';
+}
+
+const SIDE_TITLES: Record<BracketSide, string> = {
+  W: 'Winners',
+  L: 'Losers',
+  GF: 'Grand final',
+  R: 'Round',
+};
+
+const BYE_LABELS: Record<string, string> = {
+  knockout: 'Bye',
+  rest: 'Rest',
+  placement: 'Placement',
+};
+
 export default function BatchManagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
@@ -196,8 +221,26 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   if (error) return <p className="text-corner-red">{error}</p>;
   if (!batch) return <p className="text-corner-red">Batch not found.</p>;
 
-  const rounds = Array.from(new Set(matches.map((m) => m.round_number ?? 0))).sort((a, b) => a - b);
   const refereeChanged = selectedRefereeId !== (batch.referee_id ?? '');
+
+  // Bracket-side grouping (Step 9): single-side batches (every SE/RR batch)
+  // render exactly as before; multi-side (DE) batches get Winners / Losers /
+  // Grand-final sections, each with its own round cards.
+  const SIDE_ORDER: BracketSide[] = ['W', 'L', 'GF', 'R'];
+  const sidesInUse = SIDE_ORDER.filter((s) => matches.some((m) => sideOf(m) === s));
+  const singleSide = sidesInUse.length <= 1;
+  const defaultSide: BracketSide = sidesInUse[0] ?? 'W';
+  const roundsFor = (side: BracketSide) =>
+    Array.from(new Set(matches.filter((m) => sideOf(m) === side).map((m) => m.round_number ?? 0))).sort((a, b) => a - b);
+  const bracketSections = (singleSide ? [defaultSide] : sidesInUse).map((side) => ({
+    side,
+    rounds: roundsFor(side),
+  }));
+  function roundTitle(side: BracketSide, round: number): string {
+    if (singleSide) return `Round ${round}`;
+    if (side === 'GF') return 'Grand final';
+    return `${SIDE_TITLES[side]} — Round ${round}`;
+  }
 
   return (
     <div className="page">
@@ -237,13 +280,16 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
       {matches.length === 0 ? (
         <p className="text-muted">No matches yet.</p>
       ) : (
-        rounds.map((round) => (
-          <div className="card round-card" key={round}>
-            <p className="round-title">Round {round}</p>
-            <div className="bracket">
-              {matches
-                .filter((m) => (m.round_number ?? 0) === round)
-                .map((match, i) => {
+        bracketSections.map((section) => (
+          <div key={section.side}>
+            {!singleSide && <p className="side-title">{SIDE_TITLES[section.side]}</p>}
+            {section.rounds.map((round) => (
+              <div className="card round-card" key={`${section.side}-${round}`}>
+                <p className="round-title">{roundTitle(section.side, round)}</p>
+                <div className="bracket">
+                  {matches
+                    .filter((m) => sideOf(m) === section.side && (m.round_number ?? 0) === round)
+                    .map((match, i) => {
                   const canStart = match.status === 'scheduled' && !!match.player1_id && !!match.player2_id;
                   const canRecord = match.status === 'scheduled' || match.status === 'in_progress';
                   const canReopen = match.status === 'completed';
@@ -253,6 +299,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                   const w = winnerName(match);
                   const isPanelHere = panel?.matchId === match.match_id;
                   const status = match.status ?? 'scheduled';
+                  const byeType = (match as MatchWithSide).bye_type ?? null;
 
                   return (
                     <div className="match" key={match.match_id}>
@@ -271,6 +318,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           {match.player2_name ?? 'TBD'}
                         </span>
                         <span className={`pill pill-${status}`}>{status === 'in_progress' ? 'In progress' : status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                        {byeType && <span className="bye-tag">{BYE_LABELS[byeType] ?? byeType}</span>}
                       </div>
                       {w && <div className="winner-note">Winner: {w}</div>}
 
@@ -437,10 +485,12 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                     </div>
                   );
                 })}
+              </div>
             </div>
-          </div>
-        ))
-      )}
+          ))}
+        </div>
+      ))
+    )}
 
       {toast && <div className="toast">{toast}</div>}
 
@@ -542,6 +592,23 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           text-transform: uppercase;
           color: var(--color-muted);
           margin: 0 0 14px;
+        }
+        .side-title {
+          font-size: 15px;
+          font-weight: 800;
+          letter-spacing: -0.2px;
+          color: var(--color-ink);
+          margin: 6px 0 2px;
+        }
+        .bye-tag {
+          display: inline-block;
+          border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 10.5px;
+          font-weight: 800;
+          color: #8a6a10;
+          background: color-mix(in srgb, var(--color-status-pending) 14%, transparent);
+          border: 1px solid color-mix(in srgb, var(--color-status-pending) 32%, transparent);
         }
         .bracket {
           position: relative;
