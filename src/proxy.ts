@@ -86,8 +86,22 @@ export async function proxy(request: NextRequest) {
     url.pathname = homeFor(role);
     return NextResponse.redirect(url);
   }
+  // Phase 4 (admin-in-organizer-context): an admin may enter /organizer/*
+  // ONLY with an explicit ?org=<uuid> context parameter. The param is
+  // navigation/context only -- it grants nothing by itself (RLS + RPC
+  // ownership checks authorize every read/write from the object's own
+  // owner chain + jwt_role). Without the param, admins bounce to /admin
+  // exactly as before (fail-closed default preserved).
+  const ORG_CONTEXT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const orgParam = request.nextUrl.searchParams.get('org');
+  const adminInOrgContext =
+    role === 'admin' &&
+    pathname.startsWith('/organizer') &&
+    orgParam !== null &&
+    ORG_CONTEXT_RE.test(orgParam);
   for (const roleName of Object.keys(ROLE_HOME)) {
     if (pathname.startsWith(`/${roleName}`) && role !== roleName) {
+      if (adminInOrgContext) continue;
       const url = request.nextUrl.clone();
       url.pathname = homeFor(role);
       return NextResponse.redirect(url);

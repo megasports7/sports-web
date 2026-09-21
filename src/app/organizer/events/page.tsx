@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 import type { Event } from '@/lib/types';
 
 function CalendarIcon() {
@@ -59,6 +60,8 @@ function CategoryIcon() {
 }
 
 export default function OrganizerEventsPage() {
+  // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
+  const orgParam = useOrgParam();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +86,7 @@ export default function OrganizerEventsPage() {
           <h1>Events</h1>
           <p>Manage registrations and attendance scanning for each event.</p>
         </div>
-        <Link href="/organizer/events/new" className="create-cta">
+        <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
           <PlusIcon />
           Create event
         </Link>
@@ -96,7 +99,7 @@ export default function OrganizerEventsPage() {
           </div>
           <h2>No events yet</h2>
           <p>Create your first event to start taking registrations.</p>
-          <Link href="/organizer/events/new" className="create-cta">
+          <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
             <PlusIcon />
             Create event
           </Link>
@@ -105,7 +108,7 @@ export default function OrganizerEventsPage() {
         <div className="events-list">
           {events.map((e) => (
             <div className="event-card" key={e.event_id}>
-              <Link href={`/organizer/events/${e.event_id}/registrations`} className="event-main">
+              <Link href={withOrg(`/organizer/events/${e.event_id}/registrations`, orgParam)} className="event-main">
                 {e.event_date && (
                   <span className="date-badge">
                     <span className="mon">{new Date(e.event_date).toLocaleDateString(undefined, { month: 'short' })}</span>
@@ -126,15 +129,15 @@ export default function OrganizerEventsPage() {
               </Link>
 
               <div className="event-actions">
-                <Link href={`/organizer/events/${e.event_id}/batches`} className="chip">
+                <Link href={withOrg(`/organizer/events/${e.event_id}/batches`, orgParam)} className="chip">
                   <BatchIcon />
                   Batches
                 </Link>
-                <Link href={`/organizer/events/${e.event_id}/scan-attendance`} className="chip">
+                <Link href={withOrg(`/organizer/events/${e.event_id}/scan-attendance`, orgParam)} className="chip">
                   <ScanIcon />
                   Scan attendance
                 </Link>
-                <Link href={`/organizer/events/${e.event_id}/categories`} className="chip">
+                <Link href={withOrg(`/organizer/events/${e.event_id}/categories`, orgParam)} className="chip">
                   <CategoryIcon />
                   Configure categories
                 </Link>

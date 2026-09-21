@@ -3,8 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 
 export default function NewEventPage() {
+  // Phase 4: preserve admin-in-organizer ?org= when returning to the list.
+  const orgParam = useOrgParam();
   const router = useRouter();
   const [eventName, setEventName] = useState('');
   const [venue, setVenue] = useState('');
@@ -39,7 +42,7 @@ export default function NewEventPage() {
     setSubmitting(false);
 
     if (res.success) {
-      router.push('/organizer/events');
+      router.push(withOrg('/organizer/events', orgParam));
     } else {
       setError(res.message || 'Could not create event');
     }

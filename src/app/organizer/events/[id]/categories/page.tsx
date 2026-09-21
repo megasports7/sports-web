@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 import type {
   ConfiguredCompetitionType,
   ConfiguredEventCategory,
@@ -102,6 +103,8 @@ function buildInput(form: CategoryForm): { input?: ConfiguredEventCategoryInput;
 }
 
 export default function ConfigureEventCategoriesPage() {
+  // Phase 4: preserve admin-in-organizer ?org= on the back link.
+  const orgParam = useOrgParam();
   const { id: eventId } = useParams<{ id: string }>();
   const [eventName, setEventName] = useState('Event');
   const [categories, setCategories] = useState<ConfiguredEventCategory[]>([]);
@@ -251,7 +254,7 @@ export default function ConfigureEventCategoriesPage() {
     <div className="page">
       <div className="head-row">
         <div>
-          <Link href="/organizer/events" className="back-link">← Events</Link>
+          <Link href={withOrg('/organizer/events', orgParam)} className="back-link">← Events</Link>
           <h1>Configure categories</h1>
           <p>{eventName} · Shared Supabase configuration only. Publish, then Activate v2 for players to see configured categories.</p>
         </div>

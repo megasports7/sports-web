@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 import { QrScanner } from '@/lib/qr/QrScanner';
 import {
   TANDING_AGE_CATEGORIES,
@@ -23,6 +24,8 @@ interface ScannedPlayer {
 export default function RapidModePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
   const router = useRouter();
+  // Phase 4: preserve admin-in-organizer ?org= when returning to batches.
+  const orgParam = useOrgParam();
 
   const [eventName, setEventName] = useState<string | null>(null);
 
@@ -167,7 +170,7 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
     });
     setCreating(false);
     if (res.success) {
-      router.push(`/organizer/events/${eventId}/batches`);
+      router.push(withOrg(`/organizer/events/${eventId}/batches`, orgParam));
     } else {
       setError(res.message || 'Could not create batch');
     }

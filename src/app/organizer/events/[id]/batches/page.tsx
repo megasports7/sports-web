@@ -3,10 +3,13 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 import type { Batch, Referee } from '@/lib/types';
 
 export default function EventBatchesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
+  const orgParam = useOrgParam();
 
   const [batches, setBatches] = useState<Batch[]>([]);
   const [referees, setReferees] = useState<Referee[]>([]);
@@ -90,10 +93,10 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
           {eventName && <p className="event-name">{eventName}</p>}
         </div>
         <div className="head-actions">
-          <Link href={`/organizer/events/${id}/batches/certificates`} className="btn-secondary">
+          <Link href={withOrg(`/organizer/events/${id}/batches/certificates`, orgParam)} className="btn-secondary">
             View certificates
           </Link>
-          <Link href={`/organizer/events/${id}/batches/create`} className="btn-primary">
+          <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
             + Create batch
           </Link>
         </div>
@@ -103,7 +106,7 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
         <div className="empty">
           <h2>No batches yet</h2>
           <p>Create a batch to start building the bracket.</p>
-          <Link href={`/organizer/events/${id}/batches/create`} className="btn-primary">
+          <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
             + Create batch
           </Link>
         </div>
@@ -128,7 +131,7 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
                   <span className="n">{b.player_count ?? 0}</span>
                   <span className="l">Players</span>
                 </div>
-                <Link href={`/organizer/batches/${b.batch_id}/manage`} className="btn-manage">
+                <Link href={withOrg(`/organizer/batches/${b.batch_id}/manage`, orgParam)} className="btn-manage">
                   Manage
                 </Link>
               </div>

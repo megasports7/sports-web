@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 import { createClient } from '@/lib/supabase/client';
 import type { FilteredPlayer, ConfiguredEventCategory } from '@/lib/types';
 import { WEIGHT_CATEGORIES_BY_AGE, SIMPLE_WEIGHT_AGES } from '@/lib/player/registrationCategories';
@@ -20,6 +21,8 @@ const SENI_TYPES = ['TUNGGAL', 'SOLO', 'GANDA', 'REGU'];
 
 export default function CreateBatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  // Phase 4: preserve admin-in-organizer ?org= when returning to batches.
+  const orgParam = useOrgParam();
   const router = useRouter();
 
   const [eventName, setEventName] = useState<string | null>(null);
@@ -264,7 +267,7 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
       });
       setCreating(false);
       if (res.success) {
-        router.push(`/organizer/events/${id}/batches`);
+        router.push(withOrg(`/organizer/events/${id}/batches`, orgParam));
       } else {
         setError(res.message || 'Could not create batch');
       }

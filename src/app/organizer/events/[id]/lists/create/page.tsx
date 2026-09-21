@@ -3,12 +3,15 @@
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 import type { AttendanceList } from '@/lib/types';
 
 const MODES = ['Enter', 'Leave', 'Lunch', 'Other'];
 
 export default function CreateAttendanceListPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  // Phase 4: preserve admin-in-organizer ?org= on the scan link.
+  const orgParam = useOrgParam();
 
   const [eventName, setEventName] = useState<string | null>(null);
 
@@ -148,7 +151,7 @@ export default function CreateAttendanceListPage({ params }: { params: Promise<{
                   <span className="n">{l.scan_count ?? 0}</span>
                   <span className="lbl">Scans</span>
                 </div>
-                <Link href={`/organizer/lists/${l.list_id}/scan`} className="btn-scan">
+                <Link href={withOrg(`/organizer/lists/${l.list_id}/scan`, orgParam)} className="btn-scan">
                   Scan
                 </Link>
               </div>

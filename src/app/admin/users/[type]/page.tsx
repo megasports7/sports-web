@@ -257,6 +257,17 @@ export default function AdminUserListPage({ params }: { params: Promise<{ type: 
                 )}
               </div>
               <div className="flex shrink-0 gap-2">
+                {/* Phase 4: admin-in-organizer-context entry. Opens the
+                    organizer's own dashboard scoped to this organizer
+                    (?org=); the admin's role never changes. */}
+                {type === 'organizers' && (
+                  <Link
+                    href={`/organizer?org=${u.id}`}
+                    className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-700"
+                  >
+                    Dashboard
+                  </Link>
+                )}
                 <Link
                   href={`/admin/users/${type}/${u.id}/edit`}
                   className="rounded-lg border px-3 py-1.5 text-xs font-medium"

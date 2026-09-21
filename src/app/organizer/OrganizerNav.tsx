@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 
 const LINKS = [
   { href: '/organizer', label: 'Dashboard' },
@@ -31,11 +32,15 @@ export function OrganizerNav() {
   const pathname = usePathname();
   const { signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  // Phase 4: preserve the admin-in-organizer ?org= context across
+  // in-dashboard navigation; null for everyone else (links unchanged).
+  const orgParam = useOrgParam();
+  const hrefWithOrg = (href: string) => withOrg(href, orgParam);
 
   return (
     <nav className="nav">
       <div className="nav-row">
-        <Link href="/organizer" className="brand">
+        <Link href={hrefWithOrg('/organizer')} className="brand">
           <span className="mark">
             <svg viewBox="0 0 22 22">
               <path d="M11 2a9 9 0 0 1 0 18 9 9 0 0 0 0-18Z" fill="var(--color-corner-red)" />
@@ -47,7 +52,7 @@ export function OrganizerNav() {
 
         <div className="tabs-desktop">
           {LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className={`tab ${pathname === link.href ? 'active' : ''}`}>
+            <Link key={link.href} href={hrefWithOrg(link.href)} className={`tab ${pathname === link.href ? 'active' : ''}`}>
               {link.label}
             </Link>
           ))}
@@ -67,7 +72,7 @@ export function OrganizerNav() {
           {LINKS.map((link) => (
             <Link
               key={link.href}
-              href={link.href}
+              href={hrefWithOrg(link.href)}
               className={`mobile-tab ${pathname === link.href ? 'active' : ''}`}
               onClick={() => setOpen(false)}
             >

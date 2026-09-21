@@ -60,6 +60,27 @@ async function getUid(supabase: ReturnType<typeof createClient>): Promise<string
   return uid;
 }
 
+/**
+ * Phase 4 (admin-in-organizer-context): optional read/operation scoping
+ * override. Set ONLY by OrgContextHost (organizer layout) when the signed-in
+ * user is an admin carrying a valid ?org=<organizer-uuid>. Scoping-only:
+ * every authorization decision still happens in RLS + RPC ownership checks
+ * from the object's own owner chain, and every who-did-it column is stamped
+ * server-side from auth.uid(). Self-identity functions (profile,
+ * updateProfile, uploadPhoto) deliberately keep using getUid() so an admin
+ * can never clobber the organizer's own profile through this override.
+ */
+let orgContextUid: string | null = null;
+
+export function setOrgContextUid(uid: string | null) {
+  orgContextUid = uid;
+}
+
+async function getScopedUid(supabase: ReturnType<typeof createClient>): Promise<string> {
+  if (orgContextUid) return orgContextUid;
+  return getUid(supabase);
+}
+
 function mapOrganizerRow(row: Record<string, unknown> | null): Organizer | null {
   if (!row) return null;
   const { legacy_id, ...rest } = row;
@@ -221,7 +242,7 @@ export const organizerApi = {
   dashboard(): Promise<ApiResponse<OrganizerDashboardData>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
 
       const [profileRes, eventsCountRes, batchesCountRes, registrationsCountRes, pendingRegistrationsRes, recentEventsRes, allEventsRes] =
         await Promise.all([
@@ -374,7 +395,7 @@ export const organizerApi = {
   events(): Promise<ApiResponse<Event[]>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
       const { data, error } = await supabase
         .from('events')
         .select('*')
@@ -406,7 +427,7 @@ export const organizerApi = {
   event(eventId: string): Promise<ApiResponse<Event>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
       const { data, error } = await supabase.from('events').select('*').eq('id', eventId).eq('organizer_id', uid).maybeSingle();
       if (error || !data) return toApiResponse<Event>({ data: null, error: error ?? { message: 'Event not found' } });
       return toApiResponse({ data: mapEventRow(data), error: null });
@@ -439,7 +460,9 @@ export const organizerApi = {
   ): Promise<ApiResponse<ConfiguredEventCategory>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      // NOTE: created_by here is body-decorative only -- the Phase 2 trigger
+      // overwrites it with auth.uid() and the RLS pin enforces it.
+      const uid = await getScopedUid(supabase);
       const { data, error } = await supabase
         .from('event_categories')
         .insert({ ...input, event_id: eventId, created_by: uid, is_published: false })
@@ -537,7 +560,7 @@ export const organizerApi = {
   }): Promise<ApiResponse<Event>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
 
       const { data: inserted, error: insertErr } = await supabase
         .from('events')
@@ -929,7 +952,7 @@ export const organizerApi = {
   }): Promise<ApiResponse<{ list_id: string }>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
       const { data: inserted, error } = await supabase
         .from('attendance_lists')
         .insert({
@@ -1275,20 +1298,51 @@ export const organizerApi = {
   },
 
   /** Prior scans for a list, so reopening the scan page shows scans made in
-   *  an earlier session, not just the current one. */
+   *  an earlier session, not just the current one. Phase 4: includes the
+   *  server-stamped actor (who scanned) with the scanner's name embedded
+   *  where profiles RLS permits reading it (admin sees all; organizers see
+   *  only permitted rows, otherwise scanner_name is null and the caller
+   *  falls back to the frozen role label). */
   getAttendanceListScans(
     listId: string,
-  ): Promise<ApiResponse<{ id: string; player_name: string; scanned_at: string }[]>> {
+  ): Promise<
+    ApiResponse<
+      {
+        id: string;
+        player_name: string;
+        scanned_at: string;
+        scanned_by_role: string | null;
+        scanner_name: string | null;
+      }[]
+    >
+  > {
     return (async () => {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('attendance_scans')
-        .select('id, player_name, scanned_at')
+        .select('id, player_name, scanned_at, scanned_by_role, scanner:scanned_by(name)')
         .eq('list_id', listId)
         .order('scanned_at', { ascending: false });
       if (error)
-        return toApiResponse<{ id: string; player_name: string; scanned_at: string }[]>({ data: null, error });
-      return toApiResponse({ data: data ?? [], error: null });
+        return toApiResponse<
+          {
+            id: string;
+            player_name: string;
+            scanned_at: string;
+            scanned_by_role: string | null;
+            scanner_name: string | null;
+          }[]
+        >({ data: null, error });
+      const rows = (data ?? []).map((r) => ({
+        id: r.id as string,
+        player_name: r.player_name as string,
+        scanned_at: r.scanned_at as string,
+        scanned_by_role: (r.scanned_by_role as string | null) ?? null,
+        scanner_name:
+          (Array.isArray(r.scanner) ? r.scanner[0]?.name : (r.scanner as { name?: string } | null)?.name) ??
+          null,
+      }));
+      return toApiResponse({ data: rows, error: null });
     })();
   },
 };
