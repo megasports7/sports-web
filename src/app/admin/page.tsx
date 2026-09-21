@@ -523,10 +523,14 @@ export default function AdminDashboardPage() {
           box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 24px -12px rgba(22, 24, 29, 0.14);
           overflow: hidden;
         }
-        .people-list > * + * {
+        /* :global() on Link-handed classes -- styled-jsx does not attach its
+           scope hash to classNames passed to custom components (same reason
+           OrganizerNav scopes Link classes globally). These names are used
+           only on this page, so there is no leak. */
+        :global(.people-list) > * + * {
           border-top: 1px solid var(--color-line);
         }
-        .person-row {
+        :global(.person-row) {
           display: flex;
           align-items: center;
           gap: 14px;
@@ -535,22 +539,22 @@ export default function AdminDashboardPage() {
           color: inherit;
           transition: background 0.15s ease;
         }
-        .person-row:hover {
+        :global(.person-row:hover) {
           background: color-mix(in srgb, var(--color-line) 38%, transparent);
         }
-        .person-row:active {
+        :global(.person-row:active) {
           background: color-mix(in srgb, var(--color-line) 60%, transparent);
         }
-        .person-row:focus-visible {
+        :global(.person-row:focus-visible) {
           outline: 2px solid var(--color-corner-red);
           outline-offset: -2px;
         }
-        .person-row > :global(svg):last-child {
+        :global(.person-row) > :global(svg):last-child {
           flex-shrink: 0;
           color: #9aa0ac;
           transition: transform 0.15s ease, color 0.15s ease;
         }
-        .person-row:hover > :global(svg):last-child {
+        :global(.person-row:hover) > :global(svg):last-child {
           color: var(--color-corner-red);
           transform: translateX(2px);
         }
