@@ -88,11 +88,25 @@ export function OrgContextHost() {
     else decision = 'fetch';
   }
 
-  useEffect(() => {
-    // External-system sync (module store + api override) is the legitimate
-    // effect work here; React state is only touched in the async callback.
+  // Optimistic scoping, applied synchronously during render (idempotent
+  // module writes, not React state). This closes the first-load race where
+  // pages fetch before the async verification below resolves: with the
+  // override already in place, the first fetch is correctly scoped. Safe
+  // because every read/write is still authorized fail-closed by RLS + RPC
+  // ownership checks -- a forged ?org= only ever yields empty/denied, and
+  // the verification effect clears the override when the target is not an
+  // organizer.
+  if (decision === 'fetch' && org) {
+    setOrgContextUid(org);
+    setOrgContextParam(org);
+  } else {
     setOrgContextUid(null);
     setOrgContextParam(null);
+  }
+
+  useEffect(() => {
+    // Verification only confirms (banner) or revokes (fail closed) the
+    // optimistic scope above; React state is touched in the async callback.
     if (decision !== 'fetch' || !org) return;
     let cancelled = false;
     createClient()
@@ -103,20 +117,28 @@ export function OrgContextHost() {
       .then(({ data }) => {
         if (cancelled) return;
         // Points at a non-organizer, a missing profile, or an unreadable
-        // row: no override, explicit notice, fail closed.
+        // row: revoke the optimistic scope, explicit notice, fail closed.
         const ok = data?.role === 'organizer';
-        if (ok) {
-          setOrgContextUid(org);
-          setOrgContextParam(org);
+        if (!ok) {
+          setOrgContextUid(null);
+          setOrgContextParam(null);
         }
         setVerification({ org, ok, name: ok ? ((data?.name as string) ?? null) : null });
       });
     return () => {
       cancelled = true;
-      setOrgContextUid(null);
-      setOrgContextParam(null);
     };
   }, [decision, org]);
+
+  // Hygiene: never let a scope outlive the dashboard (e.g. navigating to a
+  // non-organizer area unmounts the host; the next mount re-derives).
+  useEffect(
+    () => () => {
+      setOrgContextUid(null);
+      setOrgContextParam(null);
+    },
+    [],
+  );
 
   // Stale verifications (previous ?org=) are ignored by id comparison, so
   // no reset-setState is needed when the param changes.
