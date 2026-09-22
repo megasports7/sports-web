@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { playerApi } from '@/lib/api/player.api';
-import type { Player } from '@/lib/types';
+import type { GeoDistrict, GeoState, Player } from '@/lib/types';
 
 const FIELDS: { key: keyof Player; label: string; icon: () => React.ReactElement }[] = [
   { key: 'phone', label: 'Phone', icon: PhoneIcon },
@@ -117,6 +117,11 @@ export default function PlayerProfilePage() {
   const [toast, setToast] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Step 7: canonical geography dropdowns in edit mode (never free text).
+  // Stored values stay canonical NAMES -- resolvers match names/aliases.
+  const [geoStates, setGeoStates] = useState<GeoState[]>([]);
+  const [geoDistricts, setGeoDistricts] = useState<GeoDistrict[]>([]);
+  const [geoStateId, setGeoStateId] = useState('');
 
   function applyProfile(p: Player) {
     setPlayer(p);
@@ -145,6 +150,35 @@ export default function PlayerProfilePage() {
   function showToast(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2200);
+  }
+
+  // Entering edit mode preloads master data and pins the state select to
+  // the player's current canonical state (matched by name).
+  async function startEdit() {
+    setEditing(true);
+    const sRes = await playerApi.geoStates();
+    if (sRes.success && sRes.data) {
+      setGeoStates(sRes.data);
+      const current = (form.state ?? player?.state ?? '').trim().toLowerCase();
+      const match = sRes.data.find((s) => s.name.toLowerCase() === current);
+      if (match) {
+        setGeoStateId(match.id);
+        const dRes = await playerApi.geoDistricts(match.id);
+        if (dRes.success && dRes.data) setGeoDistricts(dRes.data);
+      }
+    }
+  }
+
+  async function handleGeoStateChange(nextStateId: string) {
+    setGeoStateId(nextStateId);
+    const name = geoStates.find((s) => s.id === nextStateId)?.name ?? '';
+    setForm((prev) => ({ ...prev, state: name, district: '' }));
+    if (!nextStateId) {
+      setGeoDistricts([]);
+      return;
+    }
+    const res = await playerApi.geoDistricts(nextStateId);
+    if (res.success && res.data) setGeoDistricts(res.data);
   }
 
   async function handleSave() {
@@ -245,7 +279,7 @@ export default function PlayerProfilePage() {
         <div className="info-head">
           <h2>Personal info</h2>
           {!editing && (
-            <button className="edit-link" onClick={() => setEditing(true)}>
+            <button className="edit-link" onClick={startEdit}>
               <EditIcon />
               Edit
             </button>
@@ -262,6 +296,7 @@ export default function PlayerProfilePage() {
 
         {FIELDS.map((f) => {
           const Icon = f.icon;
+          const isGeo = f.key === 'state' || f.key === 'district';
           return (
             <div className="row" key={f.key}>
               <span className="k">
@@ -269,7 +304,33 @@ export default function PlayerProfilePage() {
                 {f.label}
               </span>
               {editing ? (
-                <input value={form[f.key] ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))} />
+                isGeo ? (
+                  f.key === 'state' ? (
+                    <select value={geoStateId} onChange={(e) => handleGeoStateChange(e.target.value)}>
+                      <option value="">Select</option>
+                      {geoStates.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={form.district ?? ''}
+                      onChange={(e) => setForm((prev) => ({ ...prev, district: e.target.value }))}
+                      disabled={!geoStateId}
+                    >
+                      <option value="">{geoStateId ? 'Select' : 'Select a state first'}</option>
+                      {geoDistricts.map((d) => (
+                        <option key={d.id} value={d.name}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                ) : (
+                  <input value={form[f.key] ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))} />
+                )
               ) : (
                 <span className={`v ${!player[f.key] ? 'muted' : f.key === 'blood_group' ? 'blood' : ''}`}>
                   {(player[f.key] as string) || 'Not set'}
@@ -599,6 +660,23 @@ export default function PlayerProfilePage() {
           outline: none;
           font-family: inherit;
           transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .row select {
+          width: 190px;
+          max-width: 55%;
+          text-align: right;
+          border: 1.5px solid var(--color-line);
+          border-radius: 9px;
+          padding: 7px 10px;
+          font-size: 13.5px;
+          font-weight: 600;
+          color: var(--color-ink);
+          outline: none;
+          font-family: inherit;
+          background: var(--color-surface);
+        }
+        .row select:disabled {
+          opacity: 0.5;
         }
         .row input:focus {
           border-color: var(--color-accent-blue);

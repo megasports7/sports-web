@@ -18,6 +18,8 @@ import type {
   Match,
   Certificate,
   Registration,
+  GeoState,
+  GeoDistrict,
 } from '../types';
 
 function toApiResponse<T>(result: { data: T | null; error: unknown }): ApiResponse<T> {
@@ -138,6 +140,30 @@ async function callRegisterForEvent(
 }
 
 export const playerApi = {
+  /** Canonical master data for State -> District dropdowns (Step 7).
+   *  states/districts are authenticated-readable reference data. */
+  geoStates(): Promise<ApiResponse<GeoState[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from('states').select('id, name, code').order('name');
+      if (error) return toApiResponse<GeoState[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoState[], error: null });
+    })();
+  },
+
+  geoDistricts(stateId: string): Promise<ApiResponse<GeoDistrict[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('districts')
+        .select('id, state_id, name, code')
+        .eq('state_id', stateId)
+        .order('name');
+      if (error) return toApiResponse<GeoDistrict[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoDistrict[], error: null });
+    })();
+  },
+
   dashboard(): Promise<ApiResponse<PlayerDashboardData>> {
     return (async () => {
       const supabase = createClient();

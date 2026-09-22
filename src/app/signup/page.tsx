@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { ROLE_COLOR_VAR, ROLE_LABEL, RoleIcon } from '@/lib/auth/roleUi';
 import { playerApi } from '@/lib/api/player.api';
-import type { UserRole } from '@/lib/types';
+import type { GeoDistrict, GeoState, UserRole } from '@/lib/types';
 
 const SIGNUP_ROLES = ['player', 'organizer', 'referee'] as const;
 
@@ -101,6 +101,13 @@ export default function SignupPage() {
   const [gender, setGender] = useState('');
   const [dob, setDob] = useState('');
   const [phone, setPhone] = useState('');
+  // Step 7: player geography from canonical master data (never free text).
+  // Stored as canonical NAMES (resolvers match names/aliases); FK-free by
+  // design -- see plan v2. Required: a geo-less player is invisible to every
+  // secretary (fail-closed), so signup must not create one.
+  const [geoStates, setGeoStates] = useState<GeoState[]>([]);
+  const [geoDistricts, setGeoDistricts] = useState<GeoDistrict[]>([]);
+  const [stateId, setStateId] = useState('');
   const [district, setDistrict] = useState('');
   const [emergencyContact, setEmergencyContact] = useState('');
   const [nsrdId, setNsrdId] = useState('');
@@ -111,6 +118,23 @@ export default function SignupPage() {
   const [profileRetry, setProfileRetry] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    playerApi.geoStates().then((res) => {
+      if (res.success && res.data) setGeoStates(res.data);
+    });
+  }, []);
+
+  async function handleSignupStateChange(nextStateId: string) {
+    setStateId(nextStateId);
+    setDistrict('');
+    if (!nextStateId) {
+      setGeoDistricts([]);
+      return;
+    }
+    const res = await playerApi.geoDistricts(nextStateId);
+    if (res.success && res.data) setGeoDistricts(res.data);
+  }
+
   function validateExtras(): string | null {
     if (role !== 'player') return null;
     if (gender !== 'male' && gender !== 'female') return 'Select a gender.';
@@ -119,6 +143,7 @@ export default function SignupPage() {
     if (Number.isNaN(dobDate.getTime()) || dobDate >= new Date()) {
       return 'Enter a valid past date of birth.';
     }
+    if (!stateId || !district) return 'Select your state and district.';
     if (aadhaar && !/^\d{12}$/.test(aadhaar.trim())) {
       return 'Aadhaar must be exactly 12 digits, or left blank.';
     }
@@ -131,11 +156,13 @@ export default function SignupPage() {
   async function runPostSignup(): Promise<boolean> {
     if (role !== 'player') return true;
     setProfileError(null);
+    const stateName = geoStates.find((s) => s.id === stateId)?.name;
     const profileRes = await playerApi.updateProfile({
       gender,
       dob,
       phone: phone.trim() || undefined,
-      district: district.trim() || undefined,
+      state: stateName,
+      district: district || undefined,
       emergency_contact: emergencyContact.trim() || undefined,
       nsrd_id: nsrdId.trim() || undefined,
     });
@@ -360,15 +387,43 @@ export default function SignupPage() {
                         />
                       </div>
                     </div>
-                    <div className="field">
-                      <div className="input-wrap">
-                        <PinIcon />
-                        <input
-                          type="text"
-                          placeholder="District"
-                          value={district}
-                          onChange={(e) => setDistrict(e.target.value)}
-                        />
+                    <div className="grid2">
+                      <div className="field">
+                        <div className="input-wrap">
+                          <PinIcon />
+                          <select
+                            required
+                            value={stateId}
+                            onChange={(e) => handleSignupStateChange(e.target.value)}
+                            aria-label="State"
+                          >
+                            <option value="">State *</option>
+                            {geoStates.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="field">
+                        <div className="input-wrap">
+                          <PinIcon />
+                          <select
+                            required
+                            value={district}
+                            onChange={(e) => setDistrict(e.target.value)}
+                            disabled={!stateId}
+                            aria-label="District"
+                          >
+                            <option value="">{stateId ? 'District *' : 'Select a state first'}</option>
+                            {geoDistricts.map((d) => (
+                              <option key={d.id} value={d.name}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     </div>
                   </div>
