@@ -39,6 +39,8 @@ import type {
   AttendanceList,
   ConfiguredEventCategory,
   ConfiguredEventCategoryInput,
+  GeoState,
+  GeoDistrict,
 } from '../types';
 
 function toApiResponse<T>(result: { data: T | null; error: unknown }): ApiResponse<T> {
@@ -550,6 +552,31 @@ export const organizerApi = {
    *  real event row to check against), banner uploaded after; a banner
    *  failure logs and the event still succeeds without one, matching
    *  mobile's own forgiving behavior. */
+  /** Canonical master data for the New Event form's State -> District
+   *  dropdowns. states/districts are authenticated-readable reference data;
+   *  this is organizer.api's own read path (no admin import). */
+  geoStates(): Promise<ApiResponse<GeoState[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from('states').select('id, name, code').order('name');
+      if (error) return toApiResponse<GeoState[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoState[], error: null });
+    })();
+  },
+
+  geoDistricts(stateId: string): Promise<ApiResponse<GeoDistrict[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('districts')
+        .select('id, state_id, name, code')
+        .eq('state_id', stateId)
+        .order('name');
+      if (error) return toApiResponse<GeoDistrict[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoDistrict[], error: null });
+    })();
+  },
+
   createEvent(data: {
     event_name: string;
     venue?: string;
@@ -557,6 +584,11 @@ export const organizerApi = {
     description?: string;
     event_date?: string;
     banner_image_file?: File;
+    /** Canonical geography (Step 8a): event location, NOT the organizer's
+     *  home -- any organizer may run an event in any state. FK integrity is
+     *  the only guard, enforced by Postgres, not by constraining choices. */
+    state_id?: string;
+    district_id?: string;
   }): Promise<ApiResponse<Event>> {
     return (async () => {
       const supabase = createClient();
@@ -571,6 +603,8 @@ export const organizerApi = {
           description: data.description ?? null,
           organizer_id: uid,
           status: 'active',
+          state_id: data.state_id ?? null,
+          district_id: data.district_id ?? null,
         })
         .select('*')
         .single();

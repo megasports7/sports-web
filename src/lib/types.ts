@@ -99,6 +99,10 @@ export interface Event {
   organizer_id?: string;
   organizer_name?: string;
   status?: string;
+  /** Canonical event geography (Step 8a): selected at creation from master
+   *  data, the single source of truth for secretary scoping downstream. */
+  state_id?: string | null;
+  district_id?: string | null;
   created_at?: string;
   player_count?: number;
   registration_id?: string | null;
