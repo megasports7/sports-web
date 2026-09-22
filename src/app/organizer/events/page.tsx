@@ -58,6 +58,19 @@ function CategoryIcon() {
     </svg>
   );
 }
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="2.4" stroke="currentColor" strokeWidth={1.5} />
+      <path
+        d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M5 5l1.4 1.4M13.6 13.6 15 15M15 5l-1.4 1.4M6.4 13.6 5 15"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 export default function OrganizerEventsPage() {
   // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
@@ -140,6 +153,10 @@ export default function OrganizerEventsPage() {
                 <Link href={withOrg(`/organizer/events/${e.event_id}/categories`, orgParam)} className="chip">
                   <CategoryIcon />
                   Configure categories
+                </Link>
+                <Link href={withOrg(`/organizer/events/${e.event_id}/settings`, orgParam)} className="chip">
+                  <SettingsIcon />
+                  Settings
                 </Link>
               </div>
             </div>

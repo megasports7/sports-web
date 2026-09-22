@@ -436,6 +436,46 @@ export const organizerApi = {
     })();
   },
 
+  /** Step 8b: correction path for event details + canonical geography.
+   *  Doubles as the deliberate backfill tool for pre-geo events (each
+   *  assignment is an explicit organizer/admin decision, never a script).
+   *  Ownership enforced twice: the eq() below AND events_update_owner RLS.
+   *  Secretaries edit through their own scoped policy instead -- this
+   *  function stays owner-scoped (getScopedUid keeps admin ?org= working). */
+  updateEvent(
+    eventId: string,
+    data: {
+      event_name?: string;
+      venue?: string;
+      event_date?: string | null;
+      description?: string | null;
+      state_id?: string | null;
+      district_id?: string | null;
+    },
+  ): Promise<ApiResponse<Event>> {
+    return (async () => {
+      const supabase = createClient();
+      const uid = await getScopedUid(supabase);
+      const patch: Record<string, unknown> = {};
+      if (data.event_name !== undefined) patch.event_name = data.event_name;
+      if (data.venue !== undefined) patch.location = data.venue;
+      if (data.event_date !== undefined) patch.event_date = data.event_date;
+      if (data.description !== undefined) patch.description = data.description;
+      if (data.state_id !== undefined) patch.state_id = data.state_id;
+      if (data.district_id !== undefined) patch.district_id = data.district_id;
+      const { data: updated, error } = await supabase
+        .from('events')
+        .update(patch)
+        .eq('id', eventId)
+        .eq('organizer_id', uid)
+        .select('*')
+        .maybeSingle();
+      if (error || !updated)
+        return toApiResponse<Event>({ data: null, error: error ?? { message: 'Event not found' } });
+      return toApiResponse({ data: mapEventRow(updated), error: null });
+    })();
+  },
+
   /** Shared Phase 3 dataset. RLS includes drafts for the event owner and
    * admins, while players and unrelated accounts see published rows only. */
   eventCategories(eventId: string): Promise<ApiResponse<ConfiguredEventCategory[]>> {
