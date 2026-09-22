@@ -4,10 +4,18 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { ROLE_COLOR_VAR, ROLE_LABEL, RoleIcon } from '@/lib/auth/roleUi';
+import { ROLE_COLOR_VAR, ROLE_LABEL, ROLE_PATH, RoleIcon } from '@/lib/auth/roleUi';
 import type { UserRole } from '@/lib/types';
 
-const ROLES: UserRole[] = ['player', 'organizer', 'referee', 'admin', 'associate'];
+const ROLES: UserRole[] = [
+  'player',
+  'organizer',
+  'referee',
+  'admin',
+  'associate',
+  'district_secretary',
+  'state_secretary',
+];
 
 export default function LoginPage() {
   const { signIn } = useAuth();
@@ -25,7 +33,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await signIn(email, password, role);
-      router.push(`/${role}`);
+      router.push(`/${ROLE_PATH[role]}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -175,21 +183,26 @@ export default function LoginPage() {
               </button>
             </form>
 
-            {role !== 'admin' && role !== 'associate' && (
-              <p className="helper">
-                No account?{' '}
-                <Link href="/signup" className="helper-link">
-                  Sign up
-                </Link>
-              </p>
-            )}
-            {role === 'associate' && <p className="helper">Use credentials shared by Admin.</p>}
+            {role !== 'admin' &&
+              role !== 'associate' &&
+              role !== 'district_secretary' &&
+              role !== 'state_secretary' && (
+                <p className="helper">
+                  No account?{' '}
+                  <Link href="/signup" className="helper-link">
+                    Sign up
+                  </Link>
+                </p>
+              )}
+            {(role === 'associate' ||
+              role === 'district_secretary' ||
+              role === 'state_secretary') && <p className="helper">Use credentials shared by Admin.</p>}
           </div>
         </div>
       </div>
 
       <p className="roster-line">
-        Every role signs in here — <span className="mono">Player · Organizer · Referee · Admin · Associate</span> —
+        Every role signs in here — <span className="mono">Player · Organizer · Referee · Admin · Associate · Secretaries</span> —
         one platform, tournament to certificate.
       </p>
 
@@ -479,6 +492,16 @@ export default function LoginPage() {
           color: var(--color-accent-violet);
           border-color: color-mix(in srgb, var(--color-accent-violet) 20%, transparent);
         }
+        .role-chip[data-role='district_secretary'] {
+          background: color-mix(in srgb, var(--color-role-district-secretary) 9%, transparent);
+          color: var(--color-role-district-secretary);
+          border-color: color-mix(in srgb, var(--color-role-district-secretary) 20%, transparent);
+        }
+        .role-chip[data-role='state_secretary'] {
+          background: color-mix(in srgb, var(--color-role-state-secretary) 9%, transparent);
+          color: var(--color-role-state-secretary);
+          border-color: color-mix(in srgb, var(--color-role-state-secretary) 20%, transparent);
+        }
         .role-chip[aria-pressed='true'] {
           color: #fff;
           border-color: transparent;
@@ -502,6 +525,14 @@ export default function LoginPage() {
         .role-chip[aria-pressed='true'][data-role='associate'] {
           background: linear-gradient(120deg, var(--color-accent-violet), #8b5cf6);
           box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-accent-violet) 50%, transparent);
+        }
+        .role-chip[aria-pressed='true'][data-role='district_secretary'] {
+          background: linear-gradient(120deg, var(--color-role-district-secretary), #14957e);
+          box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-role-district-secretary) 50%, transparent);
+        }
+        .role-chip[aria-pressed='true'][data-role='state_secretary'] {
+          background: linear-gradient(120deg, var(--color-role-state-secretary), #b57e1a);
+          box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-role-state-secretary) 50%, transparent);
         }
 
         .field {
@@ -594,6 +625,14 @@ export default function LoginPage() {
         .cta[data-role='associate'] {
           background: linear-gradient(120deg, var(--color-accent-violet), #8b5cf6);
           box-shadow: 0 10px 20px -10px color-mix(in srgb, var(--color-accent-violet) 55%, transparent);
+        }
+        .cta[data-role='district_secretary'] {
+          background: linear-gradient(120deg, var(--color-role-district-secretary), #14957e);
+          box-shadow: 0 10px 20px -10px color-mix(in srgb, var(--color-role-district-secretary) 55%, transparent);
+        }
+        .cta[data-role='state_secretary'] {
+          background: linear-gradient(120deg, var(--color-role-state-secretary), #b57e1a);
+          box-shadow: 0 10px 20px -10px color-mix(in srgb, var(--color-role-state-secretary) 55%, transparent);
         }
         .cta:disabled {
           opacity: 0.6;

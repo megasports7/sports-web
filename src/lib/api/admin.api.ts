@@ -48,6 +48,10 @@ import type {
   Organizer,
   Referee,
   Associate,
+  Secretary,
+  SecretaryPermission,
+  GeoState,
+  GeoDistrict,
   Event,
   AdminDashboardData,
   AdminUserRow,
@@ -211,6 +215,102 @@ export const adminApi = {
     })();
   },
 
+  /** Secretary rosters (plan v2 Step 5). Same shape as associates() -- the
+   *  jurisdiction (assigned_district_id) and grants (secretary_permissions)
+   *  ride along on the row / via secretaryPermissions() below. */
+  districtSecretaries(): Promise<ApiResponse<Secretary[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'district_secretary')
+        .order('created_at', { ascending: false });
+      if (error) return toApiResponse<Secretary[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as Secretary[], error: null });
+    })();
+  },
+
+  stateSecretaries(): Promise<ApiResponse<Secretary[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'state_secretary')
+        .order('created_at', { ascending: false });
+      if (error) return toApiResponse<Secretary[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as Secretary[], error: null });
+    })();
+  },
+
+  /** Canonical master data for the admin create form's State -> District
+   *  dropdowns (and the secretary-permissions editor's jurisdiction card).
+   *  states/districts are authenticated-readable reference data. */
+  geoStates(): Promise<ApiResponse<GeoState[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from('states').select('id, name, code').order('name');
+      if (error) return toApiResponse<GeoState[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoState[], error: null });
+    })();
+  },
+
+  geoDistricts(stateId: string): Promise<ApiResponse<GeoDistrict[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('districts')
+        .select('id, state_id, name, code')
+        .eq('state_id', stateId)
+        .order('name');
+      if (error) return toApiResponse<GeoDistrict[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoDistrict[], error: null });
+    })();
+  },
+
+  /** A secretary's live grant set. Admin reads any secretary's rows via the
+   *  secretary_permissions_admin policy; the secretary themself reads only
+   *  their own (secretary_permissions_select_own). */
+  secretaryPermissions(secretaryId: string): Promise<ApiResponse<SecretaryPermission[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('secretary_permissions')
+        .select('permission')
+        .eq('secretary_id', secretaryId);
+      if (error) return toApiResponse<SecretaryPermission[]>({ data: null, error });
+      return toApiResponse({
+        data: (data ?? []).map((r) => r.permission as SecretaryPermission),
+        error: null,
+      });
+    })();
+  },
+
+  /** Replace a secretary's grant set wholesale (admin only, enforced by RLS).
+   *  Delete-then-insert keeps toggle semantics exact: unchecked = row absent
+   *  = OFF. Role and jurisdiction columns are never touched here. */
+  setSecretaryPermissions(
+    secretaryId: string,
+    permissions: SecretaryPermission[],
+  ): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error: delErr } = await supabase
+        .from('secretary_permissions')
+        .delete()
+        .eq('secretary_id', secretaryId);
+      if (delErr) return toApiResponse<void>({ data: null, error: delErr });
+      if (permissions.length) {
+        const { error: insErr } = await supabase
+          .from('secretary_permissions')
+          .insert(permissions.map((p) => ({ secretary_id: secretaryId, permission: p })));
+        if (insErr) return toApiResponse<void>({ data: null, error: insErr });
+      }
+      return toApiResponse<void>({ data: undefined, error: null });
+    })();
+  },
+
   /** Fetch a single user by their real profiles.id uuid. NOT a port of
    *  mobile's dead getUser() (legacy_id+role keyed, zero callers -- see file
    *  header) -- a distinct, new, minimal single-row fetch this web page
@@ -232,17 +332,22 @@ export const adminApi = {
   },
 
   /** Create a new user. Requires the service_role key (auth.admin.createUser),
-   *  which only the admin-create-user Edge Function may hold -- never
-   *  shipped in this bundle. Role choices deliberately exclude 'admin'
-   *  itself, matching mobile's AdminEditUser.tsx role selector exactly. */
+    *  which only the admin-create-user Edge Function may hold -- never
+    *  shipped in this bundle. Role choices deliberately exclude 'admin'
+    *  itself, matching mobile's AdminEditUser.tsx role selector exactly.
+    *  Secretary extras (plan v2 Step 4): district_code resolves the
+    *  jurisdiction server-side; permissions is the admin-ticked grant set
+    *  (default none). Both are rejected for non-secretary roles. */
   createUser(data: {
     email: string;
     password: string;
     name: string;
-    role: 'player' | 'organizer' | 'referee' | 'associate';
+    role: 'player' | 'organizer' | 'referee' | 'associate' | 'district_secretary' | 'state_secretary';
     phone?: string;
     state?: string;
     district?: string;
+    district_code?: string;
+    permissions?: SecretaryPermission[];
   }): Promise<ApiResponse<{ id: string; email: string; role: string; legacy_id: number }>> {
     return invokeEdge('admin-create-user', data);
   },

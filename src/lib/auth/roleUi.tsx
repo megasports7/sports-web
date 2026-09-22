@@ -14,6 +14,8 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   referee: 'Referee',
   admin: 'Admin',
   associate: 'Associate',
+  district_secretary: 'District Secretary',
+  state_secretary: 'State Secretary',
 };
 
 // Each role's --role-color is a var() reference into the app's shared design
@@ -24,6 +26,21 @@ export const ROLE_COLOR_VAR: Record<UserRole, string> = {
   referee: 'var(--color-accent-indigo)',
   admin: 'var(--color-role-admin)',
   associate: 'var(--color-accent-violet)',
+  district_secretary: 'var(--color-role-district-secretary)',
+  state_secretary: 'var(--color-role-state-secretary)',
+};
+
+/** URL path per role. Hyphenated secretary paths (not the raw role string
+ *  with underscores) -- login's post-sign-in push and proxy's ROLE_HOME both
+ *  go through here so the two can never drift. */
+export const ROLE_PATH: Record<UserRole, string> = {
+  player: 'player',
+  organizer: 'organizer',
+  referee: 'referee',
+  admin: 'admin',
+  associate: 'associate',
+  district_secretary: 'district-secretary',
+  state_secretary: 'state-secretary',
 };
 
 export function RoleIcon({ role }: { role: UserRole }) {
@@ -79,6 +96,30 @@ export function RoleIcon({ role }: { role: UserRole }) {
           <rect x="4.5" y="3.6" width="11" height="13.4" rx="1.6" stroke="currentColor" strokeWidth={1.5} />
           <rect x="7.5" y="2.4" width="5" height="2.6" rx="1" fill="currentColor" />
           <path d="M7 9.6h6M7 12.6h6M7 15h4" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" />
+        </svg>
+      );
+    case 'district_secretary':
+      return (
+        <svg viewBox="0 0 20 20" fill="none">
+          <path
+            d="M10 17.5S4.5 12 4.5 7.8a5.5 5.5 0 0 1 11 0C15.5 12 10 17.5 10 17.5Z"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+          />
+          <circle cx="10" cy="7.8" r="2" fill="currentColor" />
+        </svg>
+      );
+    case 'state_secretary':
+      return (
+        <svg viewBox="0 0 20 20" fill="none">
+          <path
+            d="M5 2.8v14.4M5 3.4h11l-2.6 3.4L16 10.2H5"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       );
   }

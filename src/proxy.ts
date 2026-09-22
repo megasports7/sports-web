@@ -71,12 +71,19 @@ export async function proxy(request: NextRequest) {
   // A lookup table, not a growing chain of if-blocks -- adding referee here
   // (and admin/associate later) is one line, not a new hand-copied branch
   // that has to remember to redirect every *other* existing role away too.
+  //
+  // Secretary paths are hyphenated (see ROLE_PATH in roleUi) while role names
+  // use underscores -- the gate below matches on URL path prefixes, so PATHS
+  // (not role names) is what the loop iterates. A role whose home is missing
+  // here falls through to /login (fail-closed default preserved).
   const ROLE_HOME: Record<string, string> = {
     player: '/player',
     organizer: '/organizer',
     referee: '/referee',
     admin: '/admin',
     associate: '/associate',
+    district_secretary: '/district-secretary',
+    state_secretary: '/state-secretary',
   };
   const homeFor = (r: string | undefined) => (r && ROLE_HOME[r]) || '/login';
 
@@ -99,8 +106,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/organizer') &&
     orgParam !== null &&
     ORG_CONTEXT_RE.test(orgParam);
-  for (const roleName of Object.keys(ROLE_HOME)) {
-    if (pathname.startsWith(`/${roleName}`) && role !== roleName) {
+  for (const home of Object.values(ROLE_HOME)) {
+    if ((pathname === home || pathname.startsWith(`${home}/`)) && homeFor(role) !== home) {
       if (adminInOrgContext) continue;
       const url = request.nextUrl.clone();
       url.pathname = homeFor(role);

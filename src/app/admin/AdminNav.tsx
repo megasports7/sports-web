@@ -16,6 +16,8 @@ const LINKS = [
   { href: '/admin/users/organizers', label: 'Organizers' },
   { href: '/admin/users/referees', label: 'Referees' },
   { href: '/admin/users/associates', label: 'Associates' },
+  { href: '/admin/users/district-secretaries', label: 'District Secretaries' },
+  { href: '/admin/users/state-secretaries', label: 'State Secretaries' },
 ];
 
 export function AdminNav() {

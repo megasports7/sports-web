@@ -4,7 +4,14 @@
  * contract's "direct close port" principle applied to types too, not just
  * API functions.
  */
-export type UserRole = 'player' | 'organizer' | 'referee' | 'admin' | 'associate';
+export type UserRole =
+  | 'player'
+  | 'organizer'
+  | 'referee'
+  | 'admin'
+  | 'associate'
+  | 'district_secretary'
+  | 'state_secretary';
 
 export interface User {
   id: number;
@@ -351,6 +358,54 @@ export interface FilteredPlayer {
   weight_category?: string;
   seni_category?: string;
   status?: string;
+}
+
+// ===================== Secretaries (plan v2) =====================
+// Dedicated supervisory roles -- NOT organizer/associate reuse. Jurisdiction
+// (assigned_district_id / state) and per-secretary permission grants live in
+// Postgres; the client only ever reads its own scope through the geo RLS
+// policies, and gates section visibility off myPermissions() (convenience,
+// never the boundary).
+export interface Secretary {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  state?: string;
+  district?: string;
+  assigned_district_id?: string | null;
+  status?: string;
+  photo?: string | null;
+}
+
+/** Canonical v1 permission keys (plan v2). Must stay in sync with
+ *  secretary_permissions rows + has_secretary_permission() gates. */
+export const SECRETARY_PERMISSIONS = [
+  'view_players',
+  'verify_players',
+  'manage_registrations',
+  'manage_events',
+  'create_events',
+  'delete_events',
+  'manage_batches',
+  'manage_matches',
+  'attendance_ops',
+  'referee_mgmt',
+  'certificate_ops',
+] as const;
+export type SecretaryPermission = (typeof SECRETARY_PERMISSIONS)[number];
+
+/** Canonical master-data rows (states/districts tables). */
+export interface GeoState {
+  id: string;
+  name: string;
+  code: string;
+}
+export interface GeoDistrict {
+  id: string;
+  state_id: string;
+  name: string;
+  code: string;
 }
 
 // ===================== Admin =====================
