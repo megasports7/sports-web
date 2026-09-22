@@ -417,7 +417,7 @@ export default function PlayerProfilePage() {
         <button
           className="btn-save"
           style={{ marginTop: 8 }}
-          disabled={verifying || player.declared_weight_kg == null}
+          disabled={verifying || editing || player.declared_weight_kg == null}
           onClick={async () => {
             setVerifying(true);
             const res = await playerApi.demoVerifyWeight();
@@ -432,6 +432,11 @@ export default function PlayerProfilePage() {
         >
           {verifying ? 'Verifying…' : 'Verify weight (Demo)'}
         </button>
+        {editing && (
+          <p style={{ fontSize: 11, color: 'var(--color-muted)', margin: '4px 0 0' }}>
+            Save changes first, then verify — verify copies the saved declared weight.
+          </p>
+        )}
         <p style={{ fontSize: 11, color: 'var(--color-muted)', margin: '4px 0 0' }}>Demo — worktree QA only. Change age/gender/weight to test your categories.</p>
 
         <div className="weight-verification" aria-label="Weight verification status">
