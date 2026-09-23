@@ -1,153 +1,112 @@
 'use client';
 
 /**
- * Shared overview page (both portals): scope + grants load first, then the
- * roster (view_players) and event monitor list (manage_registrations) render
- * only for held grants. Missing grants render an ask-an-admin note, not an
- * error -- the backend is what enforces, and it does so silently by
- * returning no rows.
+ * Secretary portal dashboard (both portals): scope banner data + key
+ * cards linking to Players / Events / Profile. Previously this page
+ * rendered the full roster + event list inline (under the misleading
+ * "Roster" tab), which buried navigation. Each card shows live counts
+ * and the permission behind it; missing grants render a locked hint.
+ * Section visibility is convenience only -- RLS enforces regardless.
  */
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  secretaryApi,
-  type SecretaryEvent,
-  type SecretaryKind,
-  type SecretaryPlayer,
-  type SecretaryScope,
-} from '@/lib/api/secretary.api';
-import type { SecretaryPermission } from '@/lib/types';
-import { RosterSection } from './RosterSection';
+import { useSecretaryPortal } from '@/components/secretary/useSecretaryEvent';
+import type { SecretaryKind } from '@/lib/api/secretary.api';
 
-export function SecretaryOverview({
-  kind,
-  basePath,
-}: {
-  kind: SecretaryKind;
-  basePath: string;
-}) {
-  const [scope, setScope] = useState<SecretaryScope | null>(null);
-  const [perms, setPerms] = useState<SecretaryPermission[]>([]);
-  const [players, setPlayers] = useState<SecretaryPlayer[]>([]);
-  const [events, setEvents] = useState<SecretaryEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function SecretaryOverview({ kind, basePath }: { kind: SecretaryKind; basePath: string }) {
+  const { scope, perms, players, events, loading, error } = useSecretaryPortal(kind);
 
-  // One sequential load (scope first, everything else fans out) -- written
-  // inline, not via a named refresh(), per the repo's set-state-in-effect rule.
-  useEffect(() => {
-    secretaryApi.scope().then((sRes) => {
-      if (!sRes.success || !sRes.data) {
-        setError(sRes.message || 'Could not load your scope — ask an admin to check the assignment.');
-        setLoading(false);
-        return;
-      }
-      const sc = sRes.data;
-      setScope(sc);
-      Promise.all([secretaryApi.myPermissions(), secretaryApi.roster(), secretaryApi.events(sc)]).then(
-        ([pRes, rRes, eRes]) => {
-          if (pRes.success && pRes.data) setPerms(pRes.data);
-          if (rRes.success && rRes.data) setPlayers(rRes.data);
-          else if (!rRes.success) setError(rRes.message || 'Could not load players');
-          if (eRes.success && eRes.data) setEvents(eRes.data);
-          else if (!eRes.success) setError(eRes.message || 'Could not load events');
-          setLoading(false);
-        },
-      );
-    });
-  }, [kind]);
-
-  if (loading) return <p className="text-muted">Loading {kind === 'district_secretary' ? 'district' : 'state'} overview…</p>;
+  if (loading)
+    return <p className="text-muted">Loading {kind === 'district_secretary' ? 'district' : 'state'} dashboard…</p>;
   if (error && !scope) return <p className="text-error">{error}</p>;
 
   const canViewPlayers = perms.includes('view_players');
   const canMonitor = perms.includes('manage_registrations');
 
+  const cards = [
+    {
+      title: 'Players',
+      href: `${basePath}/players`,
+      desc: canViewPlayers ? `${players.length} players in your jurisdiction.` : 'Player roster.',
+      locked: !canViewPlayers,
+      lockHint: 'Needs view_players — ask an admin.',
+    },
+    {
+      title: 'Events',
+      href: `${basePath}/events`,
+      desc: canMonitor ? `${events.length} events in scope.` : 'Events in your jurisdiction.',
+      locked: !canMonitor,
+      lockHint: 'Needs manage_registrations — ask an admin.',
+    },
+    {
+      title: 'Profile',
+      href: `${basePath}/profile`,
+      desc: `${scope?.label ?? 'Your scope'} · ${perms.length} permission${perms.length === 1 ? '' : 's'}.`,
+      locked: false,
+      lockHint: '',
+    },
+  ];
+
   return (
     <div className="overview">
+      <div className="head">
+        <h1>{kind === 'district_secretary' ? 'District' : 'State'} dashboard</h1>
+        <p>
+          {scope ? `Viewing ${scope.label} scope.` : ''} Pick a section below — each page shows only what your admin
+          permissions allow.
+        </p>
+      </div>
       {error && <p className="text-error">{error}</p>}
-      {canViewPlayers ? (
-        <RosterSection players={players} loading={false} error={null} />
-      ) : (
-        <div className="card">
-          <h2>Players</h2>
-          <p className="text-muted">Needs the view_players permission — ask an admin.</p>
-        </div>
-      )}
-      {canMonitor ? (
-        <div className="card">
-          <h2>Events in scope ({events.length})</h2>
-          {events.length === 0 ? (
-            <p className="text-muted">
-              No events assigned to this jurisdiction yet — an admin assigns event geography.
-            </p>
-          ) : (
-            <ul className="event-list">
-              {events.map((e) => (
-                <li key={e.event_id}>
-                  <Link href={`${basePath}/events/${e.event_id}`}>{e.event_name}</Link>
-                  {e.status && e.status !== 'active' && <span className="pill">{e.status}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : (
-        <div className="card">
-          <h2>Events</h2>
-          <p className="text-muted">Needs the manage_registrations permission — ask an admin.</p>
-        </div>
-      )}
-
+      <div className="hub">
+        {cards.map((c) => (
+          <Link key={c.title} href={c.href} className="hub-card">
+            <strong>{c.title}</strong>
+            <span>{c.desc}</span>
+            {c.locked && <span className="locked">{c.lockHint}</span>}
+          </Link>
+        ))}
+      </div>
       <style jsx>{`
         .overview {
           display: flex;
           flex-direction: column;
           gap: 16px;
         }
-        .card {
-          background: var(--color-surface);
+        .head h1 {
+          font-size: 20px;
+          font-weight: 800;
+          margin: 0;
+        }
+        .head p {
+          margin: 4px 0 0;
+          font-size: 13.5px;
+          color: var(--color-muted);
+        }
+        .hub {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 10px;
+        }
+        .hub-card {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
           border: 1px solid var(--color-line);
           border-radius: 14px;
           padding: 16px 18px;
-        }
-        .card h2 {
-          font-size: 13px;
-          font-weight: 700;
-          letter-spacing: 0.4px;
-          text-transform: uppercase;
-          color: #3a3d45;
-          margin: 0 0 12px;
-        }
-        .event-list {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-          display: flex;
-          flex-direction: column;
-        }
-        .event-list li {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 4px;
-          border-bottom: 1px solid var(--color-line);
-          font-size: 14px;
-        }
-        .event-list li:last-child {
-          border-bottom: none;
-        }
-        .event-list a {
-          font-weight: 600;
+          background: var(--color-surface);
+          text-decoration: none;
           color: var(--color-ink);
         }
-        .pill {
-          font-size: 11px;
-          font-weight: 700;
-          border-radius: 999px;
-          padding: 2px 10px;
-          background: var(--color-line);
+        .hub-card strong {
+          font-size: 15px;
+        }
+        .hub-card span {
+          font-size: 12.5px;
           color: var(--color-muted);
+        }
+        .hub-card .locked {
+          color: #b42318;
+          font-weight: 700;
         }
       `}</style>
     </div>

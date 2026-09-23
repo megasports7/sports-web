@@ -13,6 +13,7 @@ import {
   secretaryApi,
   type SecretaryEvent,
   type SecretaryKind,
+  type SecretaryPlayer,
   type SecretaryScope,
 } from '@/lib/api/secretary.api';
 import type { SecretaryPermission } from '@/lib/types';
@@ -57,4 +58,51 @@ export function useSecretaryEvent(kind: SecretaryKind, eventId: string): Secreta
   }, [eventId, kind]);
 
   return { scope, event, perms, loading, error };
+}
+
+export interface SecretaryPortalState {
+  scope: SecretaryScope | null;
+  perms: SecretaryPermission[];
+  players: SecretaryPlayer[];
+  events: SecretaryEvent[];
+  loading: boolean;
+  error: string | null;
+}
+
+/**
+ * Portal-level loader for the dashboard / players / events pages: scope
+ * first, then grants + roster + event list fan out. Section visibility is
+ * convenience only -- RLS authorizes every row regardless.
+ */
+export function useSecretaryPortal(kind: SecretaryKind): SecretaryPortalState {
+  const [scope, setScope] = useState<SecretaryScope | null>(null);
+  const [perms, setPerms] = useState<SecretaryPermission[]>([]);
+  const [players, setPlayers] = useState<SecretaryPlayer[]>([]);
+  const [events, setEvents] = useState<SecretaryEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    secretaryApi.scope().then((sRes) => {
+      if (!sRes.success || !sRes.data) {
+        setError(sRes.message || 'Could not load your scope — ask an admin to check the assignment.');
+        setLoading(false);
+        return;
+      }
+      const sc = sRes.data;
+      setScope(sc);
+      Promise.all([secretaryApi.myPermissions(), secretaryApi.roster(), secretaryApi.events(sc)]).then(
+        ([pRes, rRes, eRes]) => {
+          if (pRes.success && pRes.data) setPerms(pRes.data);
+          if (rRes.success && rRes.data) setPlayers(rRes.data);
+          else if (!rRes.success) setError(rRes.message || 'Could not load players');
+          if (eRes.success && eRes.data) setEvents(eRes.data);
+          else if (!eRes.success) setError(eRes.message || 'Could not load events');
+          setLoading(false);
+        },
+      );
+    });
+  }, [kind]);
+
+  return { scope, perms, players, events, loading, error };
 }

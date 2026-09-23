@@ -30,8 +30,10 @@ export function SecretaryShell({
 }) {
   const pathname = usePathname();
   const links = [
-    { href: basePath, label: 'Roster' },
-    { href: `${basePath}/profile`, label: 'Profile' },
+    { href: basePath, label: 'Dashboard', exact: true },
+    { href: `${basePath}/players`, label: 'Players', exact: false },
+    { href: `${basePath}/events`, label: 'Events', exact: false },
+    { href: `${basePath}/profile`, label: 'Profile', exact: false },
   ];
   const title = kind === 'district_secretary' ? 'District Secretary' : 'State Secretary';
 
@@ -48,7 +50,7 @@ export function SecretaryShell({
           <Link
             key={l.href}
             href={l.href}
-            className={pathname === l.href ? 'active' : ''}
+            className={l.exact ? (pathname === l.href ? 'active' : '') : pathname.startsWith(l.href) ? 'active' : ''}
           >
             {l.label}
           </Link>
