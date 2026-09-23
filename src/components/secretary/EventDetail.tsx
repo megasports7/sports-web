@@ -13,10 +13,12 @@ export function EventDetail({
   event,
   canReview,
   canManageBatches = false,
+  canManageMatches = false,
 }: {
   event: SecretaryEvent;
   canReview: boolean;
   canManageBatches?: boolean;
+  canManageMatches?: boolean;
 }) {
   const [regs, setRegs] = useState<SecretaryRegistration[]>([]);
   const [matches, setMatches] = useState<Record<string, unknown>[]>([]);
@@ -28,6 +30,7 @@ export function EventDetail({
   const [batchName, setBatchName] = useState('');
   const [batchFormat, setBatchFormat] = useState('single_elimination');
   const [creating, setCreating] = useState(false);
+  const [matchActing, setMatchActing] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -64,6 +67,33 @@ export function EventDetail({
       setError(res.message || 'Review failed');
     }
     setActing(null);
+  }
+
+  async function startMatch(matchId: string) {
+    setMatchActing(matchId);
+    const res = await secretaryApi.startMatch(matchId);
+    if (res.success) {
+      const mRes = await secretaryApi.eventMatches(event.event_id);
+      if (mRes.success && mRes.data) setMatches(mRes.data);
+      setError(null);
+    } else {
+      setError(res.message || 'Start failed');
+    }
+    setMatchActing(null);
+  }
+
+  async function declareWinner(matchId: string, winnerId: string) {
+    if (!window.confirm('Declare this winner?')) return;
+    setMatchActing(matchId);
+    const res = await secretaryApi.recordMatchResult(matchId, winnerId);
+    if (res.success) {
+      const mRes = await secretaryApi.eventMatches(event.event_id);
+      if (mRes.success && mRes.data) setMatches(mRes.data);
+      setError(null);
+    } else {
+      setError(res.message || 'Declare failed');
+    }
+    setMatchActing(null);
   }
 
   async function createBatch() {
@@ -182,7 +212,7 @@ export function EventDetail({
       <div className="card">
         <h2>Results ({matches.length})</h2>
         {matches.length === 0 ? (
-          <p className="text-muted">No decided matches yet.</p>
+          <p className="text-muted">No matches yet — create a batch from approved registrations above.</p>
         ) : (
           <table className="data-table">
             <thead>
@@ -191,19 +221,49 @@ export function EventDetail({
                 <th>Match</th>
                 <th>Status</th>
                 <th>Winner</th>
+                {canManageMatches && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {matches.map((m) => (
-                <tr key={m.id as string}>
-                  <td>{String(m.round_number ?? '—')}</td>
-                  <td>{String(m.match_number ?? '—')}</td>
-                  <td>{String(m.status ?? '—')}</td>
-                  <td>{m.winner_id ? String(m.winner_id).slice(0, 8) : '—'}</td>
-                </tr>
-              ))}
+              {matches.map((m) => {
+                const id = m.id as string;
+                const status = String(m.status ?? '');
+                const p1 = m.player1_id as string | null;
+                const p2 = m.player2_id as string | null;
+                const busy = matchActing === id;
+                return (
+                  <tr key={id}>
+                    <td>{String(m.round_number ?? '—')}</td>
+                    <td>{String(m.match_number ?? '—')}</td>
+                    <td>{String(m.status ?? '—')}</td>
+                    <td>{m.winner_id ? String(m.winner_id).slice(0, 8) : '—'}</td>
+                    {canManageMatches && (
+                      <td className="actions">
+                        {status === 'scheduled' && (
+                          <button disabled={busy} onClick={() => startMatch(id)}>
+                            Start
+                          </button>
+                        )}
+                        {status !== 'completed' && p1 && (
+                          <button disabled={busy} onClick={() => declareWinner(id, p1)}>
+                            P1 wins
+                          </button>
+                        )}
+                        {status !== 'completed' && p2 && (
+                          <button disabled={busy} onClick={() => declareWinner(id, p2)}>
+                            P2 wins
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+        )}
+        {!canManageMatches && matches.length > 0 && (
+          <p className="text-muted">Match actions need the manage_matches permission — ask an admin.</p>
         )}
       </div>
 

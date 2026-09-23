@@ -280,6 +280,31 @@ export const secretaryApi = {
     })();
   },
 
+  /** G2: start a scheduled match (manage_matches + event scope via match_event_id). */
+  startMatch(matchId: string): Promise<ApiResponse<unknown>> {
+    return (async () => {
+      const supabase = createClient();
+      await getUid(supabase);
+      const { data, error } = await supabase.rpc('start_match', { p_match_id: matchId });
+      if (error) return toApiResponse<unknown>({ data: null, error });
+      return toApiResponse({ data, error: null });
+    })();
+  },
+
+  /** G2: declare a winner (manage_matches + event scope). Winner must be a participant. */
+  recordMatchResult(matchId: string, winnerId: string): Promise<ApiResponse<unknown>> {
+    return (async () => {
+      const supabase = createClient();
+      await getUid(supabase);
+      const { data, error } = await supabase.rpc('record_match_result', {
+        p_match_id: matchId,
+        p_winner_id: winnerId,
+      });
+      if (error) return toApiResponse<unknown>({ data: null, error });
+      return toApiResponse({ data, error: null });
+    })();
+  },
+
   /** Verify players: approve / reject / override via the audited RPC.
    *  Server-side the call needs verify_players + jurisdiction
    *  (secretary_may_review); a 4xx here means the grant or scope is missing. */
