@@ -368,6 +368,20 @@ export const secretaryApi = {
     })();
   },
 
+  /** G3: issue certificates for a batch (certificate_ops + event scope via batch). */
+  issueCertificates(batchId: string): Promise<ApiResponse<unknown>> {
+    return (async () => {
+      const supabase = createClient();
+      await getUid(supabase);
+      const { data, error } = await supabase.rpc('issue_batch_certificates', {
+        p_batch_id: batchId,
+        p_overwrite: false,
+      });
+      if (error) return toApiResponse<unknown>({ data: null, error });
+      return toApiResponse({ data, error: null });
+    })();
+  },
+
   /** Transparency display: name + role of an actor, only when the caller
    *  already sees an in-scope row that actor touched (else NULL). */
   actorName(actorId: string): Promise<string | null> {

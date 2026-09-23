@@ -20,6 +20,7 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
   const [canReview, setCanReview] = useState(false);
   const [canManageBatches, setCanManageBatches] = useState(false);
   const [canManageMatches, setCanManageMatches] = useState(false);
+  const [canIssueCerts, setCanIssueCerts] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +42,7 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
             setCanReview(perms.includes('verify_players'));
             setCanManageBatches(perms.includes('manage_batches'));
             setCanManageMatches(perms.includes('manage_matches'));
+            setCanIssueCerts(perms.includes('certificate_ops'));
           }
           setLoading(false);
         },
@@ -50,7 +52,7 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
 
   if (loading) return <p className="text-muted">Loading event…</p>;
   if (!event) return <p className="text-error">{error ?? 'Event not in your scope.'}</p>;
-  return <EventDetail event={event} canReview={canReview} canManageBatches={canManageBatches} canManageMatches={canManageMatches} />;
+  return <EventDetail event={event} canReview={canReview} canManageBatches={canManageBatches} canManageMatches={canManageMatches} canIssueCerts={canIssueCerts} />;
 }
 
 export function useEventId(params: Promise<{ id: string }>): string {

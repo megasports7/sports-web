@@ -14,11 +14,13 @@ export function EventDetail({
   canReview,
   canManageBatches = false,
   canManageMatches = false,
+  canIssueCerts = false,
 }: {
   event: SecretaryEvent;
   canReview: boolean;
   canManageBatches?: boolean;
   canManageMatches?: boolean;
+  canIssueCerts?: boolean;
 }) {
   const [regs, setRegs] = useState<SecretaryRegistration[]>([]);
   const [matches, setMatches] = useState<Record<string, unknown>[]>([]);
@@ -269,6 +271,18 @@ export function EventDetail({
 
       <div className="card">
         <h2>Certificates ({certs.length})</h2>
+        {canIssueCerts ? (
+          <CertIssueBlock
+            matches={matches}
+            onIssued={async () => {
+              const cRes = await secretaryApi.eventCertificates(event.event_id);
+              if (cRes.success && cRes.data) setCerts(cRes.data);
+            }}
+            onError={setError}
+          />
+        ) : (
+          <p className="text-muted">Certificate issuance needs the certificate_ops permission — ask an admin.</p>
+        )}
         {certs.length === 0 ? (
           <p className="text-muted">No certificates issued for this event yet.</p>
         ) : (
@@ -427,6 +441,50 @@ export function EventDetail({
           opacity: 0.5;
         }
       `}</style>
+    </div>
+  );
+}
+
+function CertIssueBlock({
+  matches,
+  onIssued,
+  onError,
+}: {
+  matches: Record<string, unknown>[];
+  onIssued: () => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [batchId, setBatchId] = useState('');
+  const [issuing, setIssuing] = useState(false);
+  const batchIds = Array.from(new Set(matches.map((m) => m.batch_id as string).filter(Boolean)));
+  const selected = batchIds.includes(batchId) ? batchId : '';
+  if (batchIds.length === 0) return <p className="text-muted">No batches yet — create one above first.</p>;
+  return (
+    <div className="batch-create" style={{ marginBottom: 12 }}>
+      <select value={selected} onChange={(e) => setBatchId(e.target.value)} aria-label="Batch">
+        <option value="">Select batch</option>
+        {batchIds.map((b) => (
+          <option key={b} value={b}>
+            Batch {b.slice(0, 8)}
+          </option>
+        ))}
+      </select>
+      <button
+        disabled={issuing || !selected}
+        onClick={async () => {
+          setIssuing(true);
+          const res = await secretaryApi.issueCertificates(selected);
+          setIssuing(false);
+          if (res.success) {
+            onError(null);
+            onIssued();
+          } else {
+            onError(res.message || 'Certificate issuance failed');
+          }
+        }}
+      >
+        {issuing ? 'Issuing…' : 'Issue certificates'}
+      </button>
     </div>
   );
 }
