@@ -13,6 +13,7 @@
  */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/auth/AuthContext';
 import type { SecretaryKind } from '@/lib/api/secretary.api';
 
 export function SecretaryShell({
@@ -29,6 +30,7 @@ export function SecretaryShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { signOut } = useAuth();
   const links = [
     { href: basePath, label: 'Dashboard', exact: true },
     { href: `${basePath}/players`, label: 'Players', exact: false },
@@ -55,6 +57,9 @@ export function SecretaryShell({
             {l.label}
           </Link>
         ))}
+        <button onClick={() => signOut()} className="signout">
+          Sign out
+        </button>
       </nav>
       <main className="main">{children}</main>
 
@@ -90,6 +95,18 @@ export function SecretaryShell({
         .nav a.active {
           color: ${accentVar};
           border-bottom-color: ${accentVar};
+        }
+        .signout {
+          margin-left: auto;
+          padding: 8px 14px;
+          font-size: 13.5px;
+          font-weight: 600;
+          color: var(--color-muted);
+          background: none;
+          border: none;
+          border-bottom: 2px solid transparent;
+          cursor: pointer;
+          font-family: inherit;
         }
         .main {
           padding: 20px 36px 40px;
