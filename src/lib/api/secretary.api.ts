@@ -391,18 +391,39 @@ export const secretaryApi = {
     })();
   },
 
-  /** Certificates for one event (RLS: manage_registrations + event scope). */
+  /** Certificates for one event (RLS: manage_registrations + event scope).
+   *  player_name is a legacy seed-data snapshot the issue RPC never writes
+   *  (certificates.sql:120-123: live handlers re-derive fresh), so names
+   *  resolve here via the Hotfix F participant policy -- same pattern as
+   *  eventMatches/organizerApi.batchMatches. */
   eventCertificates(eventId: string): Promise<ApiResponse<Record<string, unknown>[]>> {
     return (async () => {
       const supabase = createClient();
       await getUid(supabase);
       const { data, error } = await supabase
         .from('certificates')
-        .select('id, player_id, player_name, position, category_name, issue_date')
+        .select('id, batch_id, player_id, player_name, position, category_name, issue_date')
         .eq('event_id', eventId)
         .order('issue_date', { ascending: false });
       if (error) return toApiResponse<Record<string, unknown>[]>({ data: null, error });
-      return toApiResponse({ data: (data ?? []) as Record<string, unknown>[], error: null });
+      const rows = (data ?? []) as Record<string, unknown>[];
+      const ids = Array.from(
+        new Set(rows.map((c) => c.player_id as string).filter((id): id is string => !!id)),
+      );
+      const nameById = new Map<string, string>();
+      if (ids.length) {
+        const { data: profiles } = await supabase.from('profiles').select('id, name').in('id', ids);
+        for (const p of profiles ?? []) nameById.set(p.id as string, p.name as string);
+      }
+      return toApiResponse({
+        data: rows.map((c) => ({
+          ...c,
+          player_name: (c.player_id as string)
+            ? (nameById.get(c.player_id as string) ?? (c.player_name as string) ?? 'Unknown')
+            : ((c.player_name as string) ?? 'Unknown'),
+        })),
+        error: null,
+      });
     })();
   },
 
