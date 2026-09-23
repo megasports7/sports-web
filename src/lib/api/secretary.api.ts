@@ -327,14 +327,18 @@ export const secretaryApi = {
   },
 
   /** Results for one event: in-scope matches (RLS-scoped read) grouped by
-   *  batch, with event linkage resolved through batch_event_id. */
+   *  batch, with event linkage resolved through batch_event_id. Player and
+   *  winner names resolve via the Hotfix F participant policy (same pattern
+   *  as organizerApi.batchMatches) -- 'TBD' for undecided feeder slots. */
   eventMatches(eventId: string): Promise<ApiResponse<Record<string, unknown>[]>> {
     return (async () => {
       const supabase = createClient();
       await getUid(supabase);
       const { data, error } = await supabase
         .from('matches')
-        .select('id, batch_id, round_number, match_number, player1_id, player2_id, winner_id, status')
+        .select(
+          'id, batch_id, batch_name, bracket_side, round_number, match_number, player1_id, player2_id, winner_id, status',
+        )
         .order('round_number')
         .order('match_number');
       if (error) return toApiResponse<Record<string, unknown>[]>({ data: null, error });
@@ -349,7 +353,41 @@ export const secretaryApi = {
         }
         if (eventCache.get(bid) === eventId) out.push(m as Record<string, unknown>);
       }
-      return toApiResponse({ data: out, error: null });
+      // Organizer-style name resolution: one profiles IN query for every
+      // participant + winner id (Hotfix F permits participants of visible
+      // events). TBD keeps undecided feeder slots readable.
+      const ids = Array.from(
+        new Set(
+          out.flatMap((m) => [m.player1_id, m.player2_id, m.winner_id]).filter((id): id is string => !!id),
+        ),
+      );
+      const nameById = new Map<string, string>();
+      if (ids.length) {
+        const { data: profiles } = await supabase.from('profiles').select('id, name').in('id', ids);
+        for (const p of profiles ?? []) nameById.set(p.id as string, p.name as string);
+      }
+      const named: Record<string, unknown>[] = out.map((m) => ({
+        ...m,
+        player1_name: (m.player1_id as string | null)
+          ? (nameById.get(m.player1_id as string) ?? 'Unknown')
+          : 'TBD',
+        player2_name: (m.player2_id as string | null)
+          ? (nameById.get(m.player2_id as string) ?? 'Unknown')
+          : 'TBD',
+        winner_name: (m.winner_id as string | null)
+          ? (nameById.get(m.winner_id as string) ?? 'Unknown')
+          : null,
+      }));
+      named.sort((a, b) => {
+        const ba = String(a.batch_id ?? '');
+        const bb = String(b.batch_id ?? '');
+        if (ba !== bb) return ba < bb ? -1 : 1;
+        const ra = Number(a.round_number ?? 0);
+        const rb = Number(b.round_number ?? 0);
+        if (ra !== rb) return ra - rb;
+        return Number(a.match_number ?? 0) - Number(b.match_number ?? 0);
+      });
+      return toApiResponse({ data: named, error: null });
     })();
   },
 

@@ -84,8 +84,8 @@ export function EventDetail({
     setMatchActing(null);
   }
 
-  async function declareWinner(matchId: string, winnerId: string) {
-    if (!window.confirm('Declare this winner?')) return;
+  async function declareWinner(matchId: string, winnerId: string, winnerName?: string) {
+    if (!window.confirm(`Declare ${winnerName ?? 'this player'} the winner?`)) return;
     setMatchActing(matchId);
     const res = await secretaryApi.recordMatchResult(matchId, winnerId);
     if (res.success) {
@@ -216,53 +216,101 @@ export function EventDetail({
         {matches.length === 0 ? (
           <p className="text-muted">No matches yet — create a batch from approved registrations above.</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Round</th>
-                <th>Match</th>
-                <th>Status</th>
-                <th>Winner</th>
-                {canManageMatches && <th>Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {matches.map((m) => {
-                const id = m.id as string;
-                const status = String(m.status ?? '');
-                const p1 = m.player1_id as string | null;
-                const p2 = m.player2_id as string | null;
-                const busy = matchActing === id;
-                return (
-                  <tr key={id}>
-                    <td>{String(m.round_number ?? '—')}</td>
-                    <td>{String(m.match_number ?? '—')}</td>
-                    <td>{String(m.status ?? '—')}</td>
-                    <td>{m.winner_id ? String(m.winner_id).slice(0, 8) : '—'}</td>
-                    {canManageMatches && (
-                      <td className="actions">
-                        {status === 'scheduled' && (
-                          <button disabled={busy} onClick={() => startMatch(id)}>
-                            Start
-                          </button>
-                        )}
-                        {status !== 'completed' && p1 && (
-                          <button disabled={busy} onClick={() => declareWinner(id, p1)}>
-                            P1 wins
-                          </button>
-                        )}
-                        {status !== 'completed' && p2 && (
-                          <button disabled={busy} onClick={() => declareWinner(id, p2)}>
-                            P2 wins
-                          </button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          (() => {
+            const groups = new Map<string, Record<string, unknown>[]>();
+            for (const m of matches) {
+              const key = (m.batch_id as string) ?? 'unknown';
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key)!.push(m);
+            }
+            return Array.from(groups.entries()).map(([batchId, ms]) => {
+              const batchName = (ms[0]?.batch_name as string) || `Batch ${batchId.slice(0, 8)}`;
+              return (
+                <div key={batchId} className="batch-group">
+                  <h3>
+                    {batchName} <span className="muted-count">({ms.length})</span>
+                  </h3>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Round</th>
+                        <th>Match</th>
+                        <th>Status</th>
+                        <th>Winner</th>
+                        {canManageMatches && <th>Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ms.map((m) => {
+                        const id = m.id as string;
+                        const status = String(m.status ?? '');
+                        const p1 = m.player1_id as string | null;
+                        const p2 = m.player2_id as string | null;
+                        const p1Name = String(m.player1_name ?? 'TBD');
+                        const p2Name = String(m.player2_name ?? 'TBD');
+                        const winnerName = (m.winner_name as string | null) ?? null;
+                        const loserName =
+                          winnerName && p1 && p2
+                            ? (m.winner_id === p1 ? p2Name : p1Name)
+                            : null;
+                        const busy = matchActing === id;
+                        return (
+                          <tr key={id}>
+                            <td>
+                              {m.bracket_side && m.bracket_side !== 'W' ? `${String(m.bracket_side)}·` : ''}R
+                              {String(m.round_number ?? '—')} · M{String(m.match_number ?? '—')}
+                            </td>
+                            <td>
+                              <span className="versus">
+                                {p1Name} <span className="vs">vs</span> {p2Name}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`status status-${status}`}>{status || '—'}</span>
+                            </td>
+                            <td>
+                              {winnerName ? (
+                                <>
+                                  <strong className="winner">{winnerName}</strong>
+                                  {loserName && (
+                                    <>
+                                      <br />
+                                      <span className="loser">Loser: {loserName}</span>
+                                    </>
+                                  )}
+                                </>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            {canManageMatches && (
+                              <td className="actions">
+                                {status === 'scheduled' && p1 && p2 && (
+                                  <button disabled={busy} onClick={() => startMatch(id)}>
+                                    Start
+                                  </button>
+                                )}
+                                {status !== 'completed' && p1 && (
+                                  <button disabled={busy} onClick={() => declareWinner(id, p1, p1Name)}>
+                                    {p1Name} wins
+                                  </button>
+                                )}
+                                {status !== 'completed' && p2 && (
+                                  <button disabled={busy} onClick={() => declareWinner(id, p2, p2Name)}>
+                                    {p2Name} wins
+                                  </button>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            });
+          })()
         )}
         {!canManageMatches && matches.length > 0 && (
           <p className="text-muted">Match actions need the manage_matches permission — ask an admin.</p>
@@ -439,6 +487,37 @@ export function EventDetail({
         }
         .batch-create button:disabled {
           opacity: 0.5;
+        }
+        .batch-group {
+          margin-bottom: 14px;
+        }
+        .batch-group:last-child {
+          margin-bottom: 0;
+        }
+        .batch-group h3 {
+          font-size: 13px;
+          font-weight: 800;
+          margin: 0 0 8px;
+          color: var(--color-ink);
+        }
+        .muted-count {
+          color: var(--color-muted);
+          font-weight: 600;
+        }
+        .versus {
+          font-weight: 700;
+        }
+        .versus .vs {
+          color: var(--color-muted);
+          font-weight: 600;
+          margin: 0 4px;
+        }
+        .winner {
+          color: #166534;
+        }
+        .loser {
+          color: var(--color-muted);
+          font-size: 12px;
         }
       `}</style>
     </div>
