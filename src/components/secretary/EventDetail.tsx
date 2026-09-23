@@ -133,10 +133,9 @@ export function EventDetail({
 
   return (
     <div className="detail">
-      <h1>{event.event_name}</h1>
       {error && <p className="text-error">{error}</p>}
 
-      <div className="card">
+      <div className="card" id="registrations">
         <h2>Registrations ({visible.length}/{regs.length})</h2>
         <div className="filters">
           {(['all', 'pending', 'approved', 'rejected'] as const).map((f) => (
@@ -186,7 +185,7 @@ export function EventDetail({
         )}
       </div>
 
-      <div className="card">
+      <div className="card" id="batches">
         <h2>Batches</h2>
         {!canManageBatches ? (
           <p className="text-muted">Batch creation needs the manage_batches permission — ask an admin.</p>
@@ -211,7 +210,7 @@ export function EventDetail({
         )}
       </div>
 
-      <div className="card">
+      <div className="card" id="matches">
         <h2>Results ({matches.length})</h2>
         {matches.length === 0 ? (
           <p className="text-muted">No matches yet — create a batch from approved registrations above.</p>
@@ -317,7 +316,7 @@ export function EventDetail({
         )}
       </div>
 
-      <div className="card">
+      <div className="card" id="certificates">
         <h2>Certificates ({certs.length})</h2>
         {canIssueCerts ? (
           <CertIssueBlock
