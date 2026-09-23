@@ -38,8 +38,8 @@ export default function DistrictPlayersPreview() {
 
       <div className="stats">
         <StatCard label="Total players" value="6" hint="In NTR jurisdiction" />
-        <StatCard label="With phone" value="5" hint="1 missing" />
-        <StatCard label="With sport" value="1" hint="5 not set" />
+        <StatCard label="Location complete" value="4" hint="State + district set" />
+        <StatCard label="Needs location fix" value="2" hint="Invisible to scope match" alert />
       </div>
 
       <SectionCard title="Roster" actionLabel="Export">
