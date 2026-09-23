@@ -256,6 +256,30 @@ export const secretaryApi = {
     })();
   },
 
+  /** Create a batch for an in-scope event (G1: manage_batches + event scope).
+   *  Ownership derives from the event's organizer server-side; the RPC raises
+   *  insufficient_privilege without the grant or out of scope. */
+  createBatch(data: {
+    event_id: string;
+    batch_name: string;
+    player_ids: string[];
+    tournament_format?: string;
+  }): Promise<ApiResponse<unknown>> {
+    return (async () => {
+      const supabase = createClient();
+      await getUid(supabase);
+      const payload: Record<string, unknown> = {
+        p_event_id: data.event_id,
+        p_batch_name: data.batch_name,
+        p_player_ids: data.player_ids,
+      };
+      if (data.tournament_format) payload.p_tournament_format = data.tournament_format;
+      const { data: result, error } = await supabase.rpc('create_batch_with_bracket', payload);
+      if (error) return toApiResponse<unknown>({ data: null, error });
+      return toApiResponse({ data: result, error: null });
+    })();
+  },
+
   /** Verify players: approve / reject / override via the audited RPC.
    *  Server-side the call needs verify_players + jurisdiction
    *  (secretary_may_review); a 4xx here means the grant or scope is missing. */

@@ -18,6 +18,7 @@ import { EventDetail } from '@/components/secretary/EventDetail';
 export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eventId: string }) {
   const [event, setEvent] = useState<SecretaryEvent | null>(null);
   const [canReview, setCanReview] = useState(false);
+  const [canManageBatches, setCanManageBatches] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,8 +35,11 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
           setEvent(found);
           if (!found) setError('Event not in your scope.');
           else setError(null);
-          if (pRes.success && pRes.data)
-            setCanReview((pRes.data as SecretaryPermission[]).includes('verify_players'));
+          if (pRes.success && pRes.data) {
+            const perms = pRes.data as SecretaryPermission[];
+            setCanReview(perms.includes('verify_players'));
+            setCanManageBatches(perms.includes('manage_batches'));
+          }
           setLoading(false);
         },
       );
@@ -44,7 +48,7 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
 
   if (loading) return <p className="text-muted">Loading event…</p>;
   if (!event) return <p className="text-error">{error ?? 'Event not in your scope.'}</p>;
-  return <EventDetail event={event} canReview={canReview} />;
+  return <EventDetail event={event} canReview={canReview} canManageBatches={canManageBatches} />;
 }
 
 export function useEventId(params: Promise<{ id: string }>): string {

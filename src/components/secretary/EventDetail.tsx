@@ -9,7 +9,15 @@
 import { useEffect, useState } from 'react';
 import { secretaryApi, type SecretaryEvent, type SecretaryRegistration } from '@/lib/api/secretary.api';
 
-export function EventDetail({ event, canReview }: { event: SecretaryEvent; canReview: boolean }) {
+export function EventDetail({
+  event,
+  canReview,
+  canManageBatches = false,
+}: {
+  event: SecretaryEvent;
+  canReview: boolean;
+  canManageBatches?: boolean;
+}) {
   const [regs, setRegs] = useState<SecretaryRegistration[]>([]);
   const [matches, setMatches] = useState<Record<string, unknown>[]>([]);
   const [certs, setCerts] = useState<Record<string, unknown>[]>([]);
@@ -17,6 +25,9 @@ export function EventDetail({ event, canReview }: { event: SecretaryEvent; canRe
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [batchName, setBatchName] = useState('');
+  const [batchFormat, setBatchFormat] = useState('single_elimination');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -53,6 +64,35 @@ export function EventDetail({ event, canReview }: { event: SecretaryEvent; canRe
       setError(res.message || 'Review failed');
     }
     setActing(null);
+  }
+
+  async function createBatch() {
+    const name = batchName.trim();
+    const playerIds = regs.filter((r) => r.status === 'approved').map((r) => r.player_id);
+    if (!name) {
+      setError('Enter a batch name first.');
+      return;
+    }
+    if (playerIds.length < 1) {
+      setError('Approve at least one registration before creating a batch.');
+      return;
+    }
+    setCreating(true);
+    const res = await secretaryApi.createBatch({
+      event_id: event.event_id,
+      batch_name: name,
+      player_ids: playerIds,
+      tournament_format: batchFormat,
+    });
+    setCreating(false);
+    if (res.success) {
+      setBatchName('');
+      setError(null);
+      const mRes = await secretaryApi.eventMatches(event.event_id);
+      if (mRes.success && mRes.data) setMatches(mRes.data);
+    } else {
+      setError(res.message || 'Batch creation failed');
+    }
   }
 
   if (loading) return <p className="text-muted">Loading event…</p>;
@@ -111,6 +151,31 @@ export function EventDetail({ event, canReview }: { event: SecretaryEvent; canRe
         )}
         {!canReview && (
           <p className="text-muted">Review actions need the verify_players permission — ask an admin.</p>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Batches</h2>
+        {!canManageBatches ? (
+          <p className="text-muted">Batch creation needs the manage_batches permission — ask an admin.</p>
+        ) : (
+          <div className="batch-create">
+            <input
+              value={batchName}
+              onChange={(e) => setBatchName(e.target.value)}
+              placeholder="Batch name (e.g. U-14 Boys)"
+              aria-label="Batch name"
+            />
+            <select value={batchFormat} onChange={(e) => setBatchFormat(e.target.value)} aria-label="Format">
+              <option value="single_elimination">Single elimination</option>
+              <option value="round_robin">Round robin</option>
+              <option value="double_elimination">Double elimination</option>
+            </select>
+            <button onClick={createBatch} disabled={creating}>
+              {creating ? 'Creating…' : 'Create batch from approved'}
+            </button>
+            <p className="text-muted">Uses approved registrations as players. Ownership stays with the event organizer.</p>
+          </div>
         )}
       </div>
 
@@ -271,6 +336,34 @@ export function EventDetail({ event, canReview }: { event: SecretaryEvent; canRe
           background: var(--color-surface);
         }
         .actions button:disabled {
+          opacity: 0.5;
+        }
+        .batch-create {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+        }
+        .batch-create input,
+        .batch-create select {
+          border: 1px solid var(--color-line);
+          border-radius: 8px;
+          padding: 6px 10px;
+          font-size: 13px;
+          background: var(--color-surface);
+          color: var(--color-ink);
+        }
+        .batch-create button {
+          border: 1px solid var(--color-line);
+          border-radius: 8px;
+          padding: 6px 12px;
+          font-size: 12.5px;
+          font-weight: 700;
+          cursor: pointer;
+          background: var(--color-ink);
+          color: #fff;
+        }
+        .batch-create button:disabled {
           opacity: 0.5;
         }
       `}</style>
