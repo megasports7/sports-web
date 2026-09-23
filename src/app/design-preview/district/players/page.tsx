@@ -17,9 +17,14 @@ const PLAYERS = [
   { name: 'Guru Gopal', email: 'gg@test.com', phone: '91345 67890', sport: 'Cricket', state: 'Andhra Pradesh', district: 'NTR' },
   { name: 'Happy', email: 'hap@test.com', phone: '94561 23000', sport: '—', state: '—', district: 'NTR' },
   { name: 'QA Player', email: 'player@test.com', phone: '91234 00000', sport: '—', state: 'Andhra Pradesh', district: '—' },
+  { name: 'Demo Player 6', email: 'player6@test.com', phone: '99887 76655', sport: 'Kabaddi', state: 'Andhra Pradesh', district: 'NTR' },
+  { name: 'Demo Player 7', email: 'player7@test.com', phone: '—', sport: '—', state: 'Andhra Pradesh', district: 'NTR' },
+  { name: 'Demo Player 8', email: 'player8@test.com', phone: '97766 55444', sport: 'Cricket', state: 'Telangana', district: 'Khammam' },
+  { name: 'Demo Player 9', email: 'player9@test.com', phone: '96655 44333', sport: '—', state: '—', district: '—' },
 ];
 
 export default function DistrictPlayersPreview() {
+  const shown = PLAYERS.slice(0, 6);
   return (
     <PreviewShell
       roleLabel="District Secretary"
@@ -61,7 +66,7 @@ export default function DistrictPlayersPreview() {
             </tr>
           </thead>
           <tbody>
-            {PLAYERS.map((p) => (
+            {shown.map((p) => (
               <tr key={p.email}>
                 <td>
                   <strong>{p.name}</strong>
@@ -75,7 +80,8 @@ export default function DistrictPlayersPreview() {
             ))}
           </tbody>
         </table>
-        <p className="foot">Showing 6 of 6 · “—” means not set (admin can fix canonical State/District).</p>
+        <span className="show-all">Show all ({PLAYERS.length}) → exports full list to Excel</span>
+        <p className="foot">Showing 6 of {PLAYERS.length} · “—” means not set (admin can fix canonical State/District).</p>
       </SectionCard>
 
       <style jsx>{`
@@ -162,6 +168,16 @@ export default function DistrictPlayersPreview() {
         }
         .data-table td.muted {
           color: #b7b3aa;
+        }
+        .show-all {
+          display: block;
+          margin-top: 10px;
+          border: 1px solid var(--color-line);
+          border-radius: 10px;
+          padding: 8px;
+          font-size: 13px;
+          font-weight: 700;
+          text-align: center;
         }
         .foot {
           margin: 10px 0 0;

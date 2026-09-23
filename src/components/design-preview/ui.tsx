@@ -133,16 +133,31 @@ export function StatCard({
   value,
   hint,
   alert = false,
+  fraction,
 }: {
   label: string;
   value: string;
   hint: string;
   alert?: boolean;
+  fraction?: { value: number; total: number };
 }) {
+  const pct = fraction ? Math.round((fraction.value / fraction.total) * 100) : 0;
   return (
     <div className="stat">
       <span className="label">{label}</span>
-      <strong className={alert ? 'value alert' : 'value'}>{value}</strong>
+      {fraction ? (
+        <div className="fraction">
+          <strong className={alert ? 'alert' : ''}>{fraction.value}</strong>
+          <span>/ {fraction.total}</span>
+        </div>
+      ) : (
+        <strong className={alert ? 'value alert' : 'value'}>{value}</strong>
+      )}
+      {fraction && (
+        <span className="track">
+          <span className="fill" style={{ width: `${pct}%` }} />
+        </span>
+      )}
       <span className="hint">{hint}</span>
       <style jsx>{`
         .stat {
@@ -168,6 +183,38 @@ export function StatCard({
         }
         .value.alert {
           color: var(--color-corner-red);
+        }
+        .fraction {
+          display: flex;
+          align-items: baseline;
+          gap: 4px;
+        }
+        .fraction strong {
+          font-size: 28px;
+          font-weight: 800;
+          line-height: 1;
+          letter-spacing: -0.5px;
+        }
+        .fraction strong.alert {
+          color: var(--color-corner-red);
+        }
+        .fraction span {
+          font-size: 15px;
+          font-weight: 700;
+          color: var(--color-muted);
+        }
+        .track {
+          height: 4px;
+          border-radius: 999px;
+          background: var(--color-line);
+          overflow: hidden;
+          margin-top: 5px;
+        }
+        .fill {
+          display: block;
+          height: 100%;
+          border-radius: 999px;
+          background: var(--color-accent-green);
         }
         .hint {
           font-size: 12px;

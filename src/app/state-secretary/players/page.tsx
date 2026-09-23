@@ -1,18 +1,17 @@
 'use client';
 
 import { PortalSectionPage } from '@/components/secretary/PortalSectionPage';
-import { RosterSection } from '@/components/secretary/RosterSection';
+import { PlayersSection } from '@/components/secretary/PlayersSection';
 
 export default function StateSecretaryPlayersPage() {
   return (
     <PortalSectionPage kind="state_secretary" title="Players">
-      {({ perms, players, loading, error }) =>
-        perms.includes('view_players') ? (
-          <RosterSection players={players} loading={loading} error={error} />
-        ) : (
-          <p className="text-muted">Needs the view_players permission — ask an admin.</p>
-        )
-      }
+      {({ perms, players, loading, scope }) => {
+        if (loading) return <p className="text-muted">Loading players…</p>;
+        if (!perms.includes('view_players'))
+          return <p className="text-muted">Needs the view_players permission — ask an admin.</p>;
+        return <PlayersSection players={players} scopeLabel={scope?.label ?? 'state'} />;
+      }}
     </PortalSectionPage>
   );
 }

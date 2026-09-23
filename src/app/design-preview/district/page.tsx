@@ -22,7 +22,7 @@ const EVENTS = [
 const APPROVALS = [
   { player: 'Demo Player 3', email: 'player3@test.com', detail: 'TANDING · 10–50 kg', status: 'pending' },
   { player: 'Demo Player 4', email: 'player4@test.com', detail: 'TANDING · 10–50 kg', status: 'pending' },
-  { player: 'QA Player', email: 'player@test.com', detail: 'TANDING · 10–50 kg', status: 'approved' },
+  { player: 'Demo Player 5', email: 'player5@test.com', detail: 'KYOKUSHIN · open', status: 'pending' },
 ];
 
 const RESULTS = [
@@ -52,7 +52,7 @@ export default function DistrictDashboardPreview() {
         <StatCard label="Players in jurisdiction" value="6" hint="Across all sports" />
         <StatCard label="Events in scope" value="2" hint="Assigned to NTR" />
         <StatCard label="Pending approvals" value="3" hint="Needs review" alert />
-        <StatCard label="Matches decided" value="5/9" hint="Across 2 batches" />
+        <StatCard label="Matches decided" value="5/9" hint="Across 2 batches" fraction={{ value: 5, total: 9 }} />
       </div>
 
       <div className="grid">
