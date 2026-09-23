@@ -15,6 +15,16 @@ export interface EventNavItem {
   href: string;
 }
 
+/** Route hrefs for the split event section (step 2). */
+export function eventNavItems(basePath: string, eventId: string): EventNavItem[] {
+  return [
+    { label: 'Overview', href: `${basePath}/events/${eventId}` },
+    { label: 'Registrations', href: `${basePath}/events/${eventId}/registrations` },
+    { label: 'Batches', href: `${basePath}/events/${eventId}/batches` },
+    { label: 'Certificates', href: `${basePath}/events/${eventId}/certificates` },
+  ];
+}
+
 export function EventNav({ items }: { items: EventNavItem[] }) {
   if (items.length === 0) return null;
   return (

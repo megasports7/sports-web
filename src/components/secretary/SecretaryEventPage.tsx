@@ -4,13 +4,11 @@
  * Event monitor page (both portals share this shape via per-role wrappers).
  * Step 1 of the split: scope/permission loading now comes from the shared
  * useSecretaryEvent hook; this page renders the EventNav tabs + an overview
- * hub of section cards, with the existing full EventDetail kept live below
- * until step 2 moves each section to its own route.
+ * hub of section cards linking to the split routes.
  */
 import { basePathFor, useSecretaryEvent } from '@/components/secretary/useSecretaryEvent';
 import type { SecretaryKind } from '@/lib/api/secretary.api';
-import { EventNav } from '@/components/secretary/EventNav';
-import { EventDetail } from '@/components/secretary/EventDetail';
+import { EventNav, eventNavItems } from '@/components/secretary/EventNav';
 import { use } from 'react';
 
 export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eventId: string }) {
@@ -20,6 +18,7 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
   if (!event) return <p className="text-error">{error ?? 'Event not in your scope.'}</p>;
 
   const base = basePathFor(kind);
+  const nav = eventNavItems(base, eventId);
   const canReview = perms.includes('verify_players');
   const canManageBatches = perms.includes('manage_batches');
   const canManageMatches = perms.includes('manage_matches');
@@ -28,28 +27,28 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
   const hub = [
     {
       label: 'Registrations',
-      href: `${base}/events/${eventId}#registrations`,
+      href: `${base}/events/${eventId}/registrations`,
       desc: 'Approve, reject, or override player registrations.',
       locked: !canReview,
       lockHint: 'Needs verify_players — ask an admin.',
     },
     {
       label: 'Batches',
-      href: `${base}/events/${eventId}#batches`,
-      desc: 'Create batches from approved registrations.',
+      href: `${base}/events/${eventId}/batches`,
+      desc: 'Create batches from approved registrations; open a batch for its matches.',
       locked: !canManageBatches,
       lockHint: 'Needs manage_batches — ask an admin.',
     },
     {
       label: 'Matches',
-      href: `${base}/events/${eventId}#matches`,
+      href: `${base}/events/${eventId}/batches`,
       desc: 'Start matches and declare winners, batch by batch.',
       locked: !canManageMatches,
       lockHint: 'Needs manage_matches — ask an admin.',
     },
     {
       label: 'Certificates',
-      href: `${base}/events/${eventId}#certificates`,
+      href: `${base}/events/${eventId}/certificates`,
       desc: 'Issue certificates for decided batches.',
       locked: !canIssueCerts,
       lockHint: 'Needs certificate_ops — ask an admin.',
@@ -60,7 +59,7 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
     <div className="event-page">
       <h1>{event.event_name}</h1>
       {error && <p className="text-error">{error}</p>}
-      <EventNav items={hub.map((h) => ({ label: h.label, href: h.href }))} />
+      <EventNav items={nav} />
       <div className="hub">
         {hub.map((h) => (
           <a key={h.label} href={h.href} className="hub-card">
@@ -70,13 +69,6 @@ export function SecretaryEventPage({ kind, eventId }: { kind: SecretaryKind; eve
           </a>
         ))}
       </div>
-      <EventDetail
-        event={event}
-        canReview={canReview}
-        canManageBatches={canManageBatches}
-        canManageMatches={canManageMatches}
-        canIssueCerts={canIssueCerts}
-      />
       <style jsx>{`
         .event-page {
           display: flex;
