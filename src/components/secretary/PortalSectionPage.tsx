@@ -10,10 +10,13 @@ import type { SecretaryKind } from '@/lib/api/secretary.api';
 export function PortalSectionPage({
   kind,
   title,
+  bare,
   children,
 }: {
   kind: SecretaryKind;
   title: string;
+  /** Skip the built-in h1 when the section renders its own approved header. */
+  bare?: boolean;
   children: (data: ReturnType<typeof useSecretaryPortal>) => React.ReactNode;
 }) {
   const data = useSecretaryPortal(kind);
@@ -22,7 +25,7 @@ export function PortalSectionPage({
 
   return (
     <div className="section-page">
-      <h1>{title}</h1>
+      {!bare && <h1>{title}</h1>}
       {children(data)}
       <style jsx>{`
         .section-page {

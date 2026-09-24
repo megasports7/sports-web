@@ -7,33 +7,52 @@
 import { basePathFor, useSecretaryEvent } from '@/components/secretary/useSecretaryEvent';
 import type { SecretaryKind } from '@/lib/api/secretary.api';
 import { EventNav, eventNavItems } from '@/components/secretary/EventNav';
+import { usePathname } from 'next/navigation';
 import type { SecretaryPermission } from '@/lib/types';
+
+const ACCENT: Record<SecretaryKind, string> = {
+  district_secretary: 'var(--color-role-district-secretary)',
+  state_secretary: 'var(--color-role-state-secretary)',
+};
 
 export function EventSubPage({
   kind,
   eventId,
   title,
+  bare,
   children,
 }: {
   kind: SecretaryKind;
   eventId: string;
   title: string;
-  children: (eventId: string, perms: SecretaryPermission[]) => React.ReactNode;
+  /** Skip the built-in title+tabs when the section renders its own approved header. */
+  bare?: boolean;
+  children: (
+    eventId: string,
+    perms: SecretaryPermission[],
+    event: NonNullable<ReturnType<typeof useSecretaryEvent>['event']>,
+    scopeLabel: string,
+  ) => React.ReactNode;
 }) {
-  const { event, perms, loading, error } = useSecretaryEvent(kind, eventId);
+  const { scope, event, perms, loading, error } = useSecretaryEvent(kind, eventId);
+  const pathname = usePathname();
 
   if (loading) return <p className="text-muted">Loading event…</p>;
   if (!event) return <p className="text-error">{error ?? 'Event not in your scope.'}</p>;
 
   const base = basePathFor(kind);
 
+  if (bare) {
+    return <div className="event-page">{children(eventId, perms, event, scope?.label ?? '')}</div>;
+  }
+
   return (
     <div className="event-page">
       <h1>
         {event.event_name} — {title}
       </h1>
-      <EventNav items={eventNavItems(base, eventId)} />
-      {children(eventId, perms)}
+      <EventNav items={eventNavItems(base, eventId)} activeHref={pathname} accentVar={ACCENT[kind]} />
+      {children(eventId, perms, event, scope?.label ?? '')}
       <style jsx>{`
         .event-page {
           display: flex;

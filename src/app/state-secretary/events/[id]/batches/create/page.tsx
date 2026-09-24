@@ -2,20 +2,20 @@
 
 import { use } from 'react';
 import { EventSubPage } from '@/components/secretary/EventSubPage';
-import { BatchesSection } from '@/components/secretary/BatchesSection';
+import { SecretaryBatchCreateSection } from '@/components/secretary/SecretaryBatchCreateSection';
 import { basePathFor } from '@/components/secretary/useSecretaryEvent';
 
-export default function DistrictSecretaryBatchesPage({ params }: { params: Promise<{ id: string }> }) {
+export default function StateSecretaryBatchCreatePage({ params }: { params: Promise<{ id: string }> }) {
   const eventId = use(params).id;
-  const base = basePathFor('district_secretary');
+  const base = basePathFor('state_secretary');
   return (
-    <EventSubPage kind="district_secretary" eventId={eventId} title="Batches" bare>
+    <EventSubPage kind="state_secretary" eventId={eventId} title="Create batch" bare>
       {(id, perms, event, scopeLabel) => (
-        <BatchesSection
+        <SecretaryBatchCreateSection
           eventId={id}
           basePath={base}
           canManageBatches={perms.includes('manage_batches')}
-          kind="district_secretary"
+          kind="state_secretary"
           event={event}
           scopeLabel={scopeLabel}
         />

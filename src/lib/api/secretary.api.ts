@@ -45,6 +45,8 @@ export interface SecretaryEvent {
   state_id: string | null;
   district_id: string | null;
   status: string | null;
+  /** Real event_date from events (null when unset) — read-only display. */
+  event_date: string | null;
 }
 
 export interface SecretaryRegistration {
@@ -53,6 +55,14 @@ export interface SecretaryRegistration {
   player_name: string;
   status: string;
   created_at: string;
+  /** Category snapshot columns on registrations (base migration). Absent
+   *  (null) when the enrichment select is unavailable on the project. */
+  event_category: string | null;
+  age_category: string | null;
+  weight_category: string | null;
+  seni_category: string | null;
+  /** v2 link column (untracked QA migration). Null when unavailable. */
+  event_category_id: string | null;
 }
 
 function toApiResponse<T>(result: { data: T | null; error: unknown }): ApiResponse<T> {
@@ -195,7 +205,7 @@ export const secretaryApi = {
       await getUid(supabase);
       const { data, error } = await supabase
         .from('events')
-        .select('id, event_name, state_id, district_id, status')
+        .select('id, event_name, state_id, district_id, status, event_date')
         .order('created_at', { ascending: false });
       if (error) return toApiResponse<SecretaryEvent[]>({ data: null, error });
       const rows = (data ?? []).filter((e) => {
@@ -213,6 +223,7 @@ export const secretaryApi = {
           state_id: (e.state_id as string | null) ?? null,
           district_id: (e.district_id as string | null) ?? null,
           status: (e.status as string | null) ?? null,
+          event_date: (e.event_date as string | null) ?? null,
         })),
         error: null,
       });
@@ -220,18 +231,29 @@ export const secretaryApi = {
   },
 
   /** Registrations for one event (RLS: manage_registrations + event scope).
-   *  Player names resolve through the same scoped profiles read as roster(). */
+   *  Player names resolve through the same scoped profiles read as roster().
+   *  Category columns ride along best-effort: projects without the newer
+   *  columns fall back to the base select so the page keeps working. */
   registrations(eventId: string): Promise<ApiResponse<SecretaryRegistration[]>> {
     return (async () => {
       const supabase = createClient();
       await getUid(supabase);
-      const { data, error } = await supabase
-        .from('registrations')
-        .select('id, player_id, status, created_at')
-        .eq('event_id', eventId)
-        .order('created_at', { ascending: false });
-      if (error) return toApiResponse<SecretaryRegistration[]>({ data: null, error });
-      const rows = data ?? [];
+      const base = 'id, player_id, status, created_at';
+      const full =
+        'id, player_id, status, created_at, event_category, age_category, weight_category, seni_category, event_category_id';
+      const first = await supabase.from('registrations').select(full).eq('event_id', eventId).order('created_at', { ascending: false });
+      let rows: Record<string, unknown>[];
+      if (first.error) {
+        const retry = await supabase
+          .from('registrations')
+          .select(base)
+          .eq('event_id', eventId)
+          .order('created_at', { ascending: false });
+        if (retry.error) return toApiResponse<SecretaryRegistration[]>({ data: null, error: retry.error });
+        rows = (retry.data ?? []) as Record<string, unknown>[];
+      } else {
+        rows = (first.data ?? []) as Record<string, unknown>[];
+      }
       const nameById = new Map<string, string>();
       if (rows.length) {
         const { data: profiles } = await supabase
@@ -250,6 +272,43 @@ export const secretaryApi = {
           player_name: nameById.get(r.player_id as string) ?? 'Unknown',
           status: String(r.status),
           created_at: r.created_at as string,
+          event_category: (r.event_category as string | null) ?? null,
+          age_category: (r.age_category as string | null) ?? null,
+          weight_category: (r.weight_category as string | null) ?? null,
+          seni_category: (r.seni_category as string | null) ?? null,
+          event_category_id: (r.event_category_id as string | null) ?? null,
+        })),
+        error: null,
+      });
+    })();
+  },
+
+  /** Published v2 categories for an event (best-effort: [] when the
+   *  project lacks the v2 tables or the read fails -- callers fall back
+   *  to the v1 category-text filters). The select policy permits any
+   *  active authenticated account to read. */
+  publishedCategories(
+    eventId: string,
+  ): Promise<ApiResponse<{ id: string; code: string; gender: string; minimum_age: number; maximum_age: number | null; weight_label: string | null; seni_category: string | null }[]>> {
+    return (async () => {
+      const supabase = createClient();
+      await getUid(supabase);
+      const { data, error } = await supabase
+        .from('event_categories')
+        .select('id, code, gender, minimum_age, maximum_age, weight_label, seni_category')
+        .eq('event_id', eventId)
+        .eq('is_published', true)
+        .order('code');
+      if (error) return toApiResponse({ data: [], error: null });
+      return toApiResponse({
+        data: (data ?? []).map((c) => ({
+          id: c.id as string,
+          code: c.code as string,
+          gender: String(c.gender ?? ''),
+          minimum_age: Number(c.minimum_age ?? 0),
+          maximum_age: (c.maximum_age as number | null) ?? null,
+          weight_label: (c.weight_label as string | null) ?? null,
+          seni_category: (c.seni_category as string | null) ?? null,
         })),
         error: null,
       });
@@ -258,12 +317,18 @@ export const secretaryApi = {
 
   /** Create a batch for an in-scope event (G1: manage_batches + event scope).
    *  Ownership derives from the event's organizer server-side; the RPC raises
-   *  insufficient_privilege without the grant or out of scope. */
+   *  insufficient_privilege without the grant or out of scope. The G1 RPC
+   *  already accepts the full bracket-engine surface (category, format, bye
+   *  method, seeds, manual bye picks) -- this client passes them through. */
   createBatch(data: {
     event_id: string;
     batch_name: string;
     player_ids: string[];
     tournament_format?: string;
+    category?: string;
+    bye_method?: string;
+    seeds?: string[];
+    bye_player_ids?: string[];
   }): Promise<ApiResponse<unknown>> {
     return (async () => {
       const supabase = createClient();
@@ -274,6 +339,10 @@ export const secretaryApi = {
         p_player_ids: data.player_ids,
       };
       if (data.tournament_format) payload.p_tournament_format = data.tournament_format;
+      if (data.category) payload.p_category = data.category;
+      if (data.bye_method) payload.p_bye_method = data.bye_method;
+      if (data.seeds?.length) payload.p_seeds = data.seeds;
+      if (data.bye_player_ids?.length) payload.p_bye_player_ids = data.bye_player_ids;
       const { data: result, error } = await supabase.rpc('create_batch_with_bracket', payload);
       if (error) return toApiResponse<unknown>({ data: null, error });
       return toApiResponse({ data: result, error: null });

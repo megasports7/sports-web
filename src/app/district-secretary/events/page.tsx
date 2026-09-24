@@ -5,12 +5,14 @@ import { SecretaryEventsSection } from '@/components/secretary/SecretaryEventsSe
 
 export default function DistrictSecretaryEventsPage() {
   return (
-    <PortalSectionPage kind="district_secretary" title="Events">
-      {({ perms, events }) => (
+    <PortalSectionPage kind="district_secretary" title="Events" bare>
+      {({ perms, events, scope }) => (
         <SecretaryEventsSection
           events={events}
           basePath="/district-secretary"
           canMonitor={perms.includes('manage_registrations')}
+          scopeLabel={scope?.label ?? 'district'}
+          kind="district_secretary"
         />
       )}
     </PortalSectionPage>

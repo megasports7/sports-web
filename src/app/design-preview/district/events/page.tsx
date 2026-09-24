@@ -69,14 +69,14 @@ export default function DistrictEventsPreview() {
           gap: 12px;
         }
         .head h1 {
-          font-size: 22px;
+          font-size: 24px;
           font-weight: 800;
           letter-spacing: -0.3px;
           margin: 0;
         }
         .head p {
           margin: 4px 0 0;
-          font-size: 13.5px;
+          font-size: 14.5px;
           color: var(--color-muted);
         }
         .scope-pill {
@@ -103,15 +103,15 @@ export default function DistrictEventsPreview() {
           flex: 1;
           border: 1px solid var(--color-line);
           border-radius: 8px;
-          padding: 6px 10px;
-          font-size: 12.5px;
+          padding: 7px 11px;
+          font-size: 13.5px;
           color: var(--color-muted);
         }
         .chip {
           border: 1px solid var(--color-line);
           border-radius: 999px;
-          padding: 4px 12px;
-          font-size: 12px;
+          padding: 5px 13px;
+          font-size: 13px;
           font-weight: 600;
           color: var(--color-muted);
           white-space: nowrap;
@@ -150,20 +150,20 @@ export default function DistrictEventsPreview() {
           min-width: 0;
         }
         .event-main strong {
-          font-size: 14px;
+          font-size: 15.5px;
         }
         .event-main span {
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-muted);
         }
         .pending {
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 700;
           color: var(--color-muted);
           white-space: nowrap;
         }
         .open {
-          font-size: 12.5px;
+          font-size: 13.5px;
           font-weight: 700;
           color: var(--color-accent-blue);
           white-space: nowrap;
