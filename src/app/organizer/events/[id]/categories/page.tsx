@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type {
   ConfiguredCompetitionType,
   ConfiguredEventCategory,
@@ -106,6 +107,9 @@ export default function ConfigureEventCategoriesPage() {
   // Phase 4: preserve admin-in-organizer ?org= on the back link.
   const orgParam = useOrgParam();
   const { id: eventId } = useParams<{ id: string }>();
+  // Convenience-only: category RLS policies + RPC gates authorize.
+  const { perms } = useOrganizerPermissions();
+  const canConfigure = canDo(perms, 'manage_events');
   const [eventName, setEventName] = useState('Event');
   const [categories, setCategories] = useState<ConfiguredEventCategory[]>([]);
   const [form, setForm] = useState<CategoryForm>(EMPTY_FORM);
@@ -259,15 +263,16 @@ export default function ConfigureEventCategoriesPage() {
           <p>{eventName} · Shared Supabase configuration only. Publish, then Activate v2 for players to see configured categories.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="secondary" onClick={activateV2} disabled={activating || publishedCount === 0}>
+          <button type="button" className="secondary" onClick={activateV2} disabled={activating || publishedCount === 0 || !canConfigure} title={canConfigure ? undefined : 'Needs the manage_events permission — ask an admin.'}>
             {activating ? 'Activating…' : 'Activate v2 (QA)'}
           </button>
-          <button type="button" className="primary" onClick={startAdd}>Add category</button>
+          <button type="button" className="primary" onClick={startAdd} disabled={!canConfigure} title={canConfigure ? undefined : 'Needs the manage_events permission — ask an admin.'}>Add category</button>
         </div>
       </div>
 
       {message && <p className="notice success" role="status">{message}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
+      {!canConfigure && <p className="notice error" role="alert">Category configuration is disabled for this account — ask an admin for manage_events.</p>}
 
       {showForm && (
         <form className="form-card" onSubmit={saveCategory}>
@@ -294,11 +299,11 @@ export default function ConfigureEventCategoriesPage() {
               {form.weightRuleMode === 'range' && <div className="split"><label>Minimum kg<input value={form.minimumWeightKg} onChange={(event) => updateForm('minimumWeightKg', event.target.value)} inputMode="decimal" required /></label><label>Maximum kg (open if blank)<input value={form.maximumWeightKg} onChange={(event) => updateForm('maximumWeightKg', event.target.value)} inputMode="decimal" /></label></div>}
             </>
           )}
-          <button className="primary" disabled={saving}>{saving ? 'Saving…' : replacementRequired ? 'Create replacement draft' : editing ? 'Save category' : 'Add draft category'}</button>
+          <button className="primary" disabled={saving || !canConfigure}>{saving ? 'Saving…' : replacementRequired ? 'Create replacement draft' : editing ? 'Save category' : 'Add draft category'}</button>
         </form>
       )}
 
-      <div className="summary"><span>{categories.length} total · {publishedCount} published</span>{categories.length === 0 && <button type="button" className="secondary" onClick={generateDefaults} disabled={generating}>{generating ? 'Creating drafts…' : 'Create from current Pencak defaults'}</button>}</div>
+      <div className="summary"><span>{categories.length} total · {publishedCount} published</span>{categories.length === 0 && <button type="button" className="secondary" onClick={generateDefaults} disabled={generating || !canConfigure}>{generating ? 'Creating drafts…' : 'Create from current Pencak defaults'}</button>}</div>
 
       {categories.length === 0 ? (
         <div className="empty"><h2>No categories yet</h2><p>Create the current Pencak set as drafts, or add a tailored category.</p></div>
@@ -307,7 +312,7 @@ export default function ConfigureEventCategoriesPage() {
           {categories.map((category) => (
             <article className="category-card" key={category.id}>
               <div><h2>{categoryTitle(category)}</h2><p className="code">{category.code}</p><p>Age {category.minimum_age}–{category.maximum_age ?? 'open'} · {describeWeight(category)}</p></div>
-              <div className="card-actions"><span className={category.is_published ? 'published' : 'draft'}>{category.is_published ? 'Published' : 'Draft'}</span><button type="button" className="secondary" onClick={() => startEdit(category)}>Edit</button><button type="button" className="secondary" onClick={() => togglePublished(category)}>{category.is_published ? 'Unpublish' : 'Publish'}</button></div>
+              <div className="card-actions"><span className={category.is_published ? 'published' : 'draft'}>{category.is_published ? 'Published' : 'Draft'}</span><button type="button" className="secondary" onClick={() => startEdit(category)} disabled={!canConfigure}>Edit</button><button type="button" className="secondary" onClick={() => togglePublished(category)} disabled={!canConfigure}>{category.is_published ? 'Unpublish' : 'Publish'}</button></div>
             </article>
           ))}
         </div>

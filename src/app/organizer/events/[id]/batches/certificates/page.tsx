@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import { certBackgroundFor, certDescriptionFor, downloadCertificateImage } from '@/lib/certificateDownload';
 import type { Batch } from '@/lib/types';
 
@@ -15,6 +16,9 @@ function tierOf(cert: Record<string, unknown>): TierFilter {
 
 export default function OrganizerCertificatesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
+  // Convenience-only: issue_batch_certificates authorizes server-side.
+  const { perms } = useOrganizerPermissions();
+  const canIssueCerts = canDo(perms, 'certificate_ops');
 
   const [eventName, setEventName] = useState<string | null>(null);
 
@@ -218,9 +222,12 @@ export default function OrganizerCertificatesPage({ params }: { params: Promise<
           </label>
         )}
 
-        <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating || !selectedBatchId || !isEligible}>
+        <button type="button" className="btn-secondary" onClick={handleGenerate} disabled={generating || !selectedBatchId || !isEligible || !canIssueCerts} title={canIssueCerts ? undefined : 'Needs the certificate_ops permission — ask an admin.'}>
           {generating ? 'Generating…' : isRegenerate ? `Regenerate certificates (${certificates.length} existing)` : 'Generate certificates'}
         </button>
+        {!canIssueCerts && (
+          <div className="pending-note">Certificate issuance is disabled for this account — ask an admin for certificate_ops.</div>
+        )}
         {generateMessage && <div className="pending-note">{generateMessage}</div>}
         {selectedBatch && !isEligible && (
           <div className="pending-note">

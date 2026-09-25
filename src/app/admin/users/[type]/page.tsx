@@ -36,6 +36,12 @@ function isSecretaryType(t: ListType): boolean {
   return t === 'district-secretaries' || t === 'state-secretaries';
 }
 
+/** Row types with an admin-managed permissions page (secretaries via
+ *  secretary_permissions, organizers/associates via organizer_permissions). */
+function hasPermissionsPage(t: ListType): boolean {
+  return isSecretaryType(t) || t === 'organizers' || t === 'associates';
+}
+
 /** Resolve assigned_district_id -> canonical district name for row display.
  *  Pure data helper (no setState) -- safe to call from effects under the
  *  repo's react-hooks/set-state-in-effect rule. */
@@ -323,7 +329,7 @@ export default function AdminUserListPage({ params }: { params: Promise<{ type: 
                     Dashboard
                   </Link>
                 )}
-                {isSecretaryType(type) && (
+                {hasPermissionsPage(type) && (
                   <Link
                     href={`/admin/users/${type}/${u.id}/permissions`}
                     className="rounded-lg border border-violet-200 px-3 py-1.5 text-xs font-medium text-violet-700"

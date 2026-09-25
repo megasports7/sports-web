@@ -12,12 +12,16 @@ import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { GeoDistrict, GeoState } from '@/lib/types';
 
 export default function EventSettingsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const orgParam = useOrgParam();
   const router = useRouter();
+  // Convenience-only: the server (events_update_owner) authorizes.
+  const { perms } = useOrganizerPermissions();
+  const canEditEvents = canDo(perms, 'manage_events');
 
   const [eventName, setEventName] = useState('');
   const [venue, setVenue] = useState('');
@@ -188,9 +192,13 @@ export default function EventSettingsPage({ params }: { params: Promise<{ id: st
         {error && <p className="text-corner-red">{error}</p>}
         {message && <p className="text-sm font-medium text-green-700">{message}</p>}
 
+        {!canEditEvents && (
+          <p className="text-corner-red">Editing is disabled for this account — ask an admin for manage_events.</p>
+        )}
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || !canEditEvents}
+          title={canEditEvents ? undefined : 'Needs the manage_events permission — ask an admin.'}
           className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save settings'}

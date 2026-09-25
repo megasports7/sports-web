@@ -4,6 +4,7 @@ import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import { createClient } from '@/lib/supabase/client';
 import type { FilteredPlayer, ConfiguredEventCategory } from '@/lib/types';
 import { WEIGHT_CATEGORIES_BY_AGE, SIMPLE_WEIGHT_AGES } from '@/lib/player/registrationCategories';
@@ -24,6 +25,9 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
   // Phase 4: preserve admin-in-organizer ?org= when returning to batches.
   const orgParam = useOrgParam();
   const router = useRouter();
+  // Convenience-only: create_batch_with_bracket authorizes server-side.
+  const { perms } = useOrganizerPermissions();
+  const canManageBatches = canDo(perms, 'manage_batches');
 
   const [eventName, setEventName] = useState<string | null>(null);
   const [isV2, setIsV2] = useState(false);
@@ -522,8 +526,11 @@ export default function CreateBatchPage({ params }: { params: Promise<{ id: stri
         </label>
 
         {error && <p className="text-corner-red">{error}</p>}
+        {!canManageBatches && (
+          <p className="text-corner-red">Batch creation is disabled for this account — ask an admin for manage_batches.</p>
+        )}
 
-        <button type="button" className="btn-primary full" onClick={handleCreate} disabled={creating || selected.size === 0}>
+        <button type="button" className="btn-primary full" onClick={handleCreate} disabled={creating || selected.size === 0 || !canManageBatches} title={canManageBatches ? undefined : 'Needs the manage_batches permission — ask an admin.'}>
           {creating ? 'Creating…' : 'Create batch'}
         </button>
       </div>

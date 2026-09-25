@@ -46,6 +46,7 @@ import type {
   ApiResponse,
   Player,
   Organizer,
+  OrganizerPermission,
   Referee,
   Associate,
   Secretary,
@@ -305,6 +306,51 @@ export const adminApi = {
         const { error: insErr } = await supabase
           .from('secretary_permissions')
           .insert(permissions.map((p) => ({ secretary_id: secretaryId, permission: p })));
+        if (insErr) return toApiResponse<void>({ data: null, error: insErr });
+      }
+      return toApiResponse<void>({ data: undefined, error: null });
+    })();
+  },
+
+  /** An organizer/associate's live grant set. Admin reads any organizer's
+   *  rows via the organizer_permissions_admin policy. Mirrors
+   *  secretaryPermissions() above -- same delete-then-insert toggle
+   *  semantics, same RLS-shaped boundary (admin-only writes). */
+  organizerPermissions(organizerId: string): Promise<ApiResponse<OrganizerPermission[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('organizer_permissions')
+        .select('permission')
+        .eq('organizer_id', organizerId);
+      if (error) return toApiResponse<OrganizerPermission[]>({ data: null, error });
+      return toApiResponse({
+        data: (data ?? []).map((r) => r.permission as OrganizerPermission),
+        error: null,
+      });
+    })();
+  },
+
+  /** Replace an organizer/associate's grant set wholesale (admin only,
+   *  enforced by RLS). Delete-then-insert keeps toggle semantics exact:
+   *  unchecked = row absent = OFF. Only the five ORGANIZER_PERMISSIONS keys
+   *  are meaningful here -- any other key is inert (no policy/RPC reads it).
+   *  New organizers start with no rows (OFF) until an admin ticks them. */
+  setOrganizerPermissions(
+    organizerId: string,
+    permissions: OrganizerPermission[],
+  ): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error: delErr } = await supabase
+        .from('organizer_permissions')
+        .delete()
+        .eq('organizer_id', organizerId);
+      if (delErr) return toApiResponse<void>({ data: null, error: delErr });
+      if (permissions.length) {
+        const { error: insErr } = await supabase
+          .from('organizer_permissions')
+          .insert(permissions.map((p) => ({ organizer_id: organizerId, permission: p })));
         if (insErr) return toApiResponse<void>({ data: null, error: insErr });
       }
       return toApiResponse<void>({ data: undefined, error: null });

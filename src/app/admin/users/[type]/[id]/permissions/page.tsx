@@ -1,23 +1,32 @@
 'use client';
 
 /**
- * Secretary permissions editor (plan v2 Step 5). Admin-only page listing the
- * 11 canonical permission keys as checkboxes reflecting the live grant rows,
- * plus the secretary's fixed jurisdiction (read-only here -- jurisdiction is
- * managed at creation / via the edit page, never by permission toggles).
+ * Permissions editor: secretaries (plan v2 Step 5) + organizers/associates
+ * (organizer checkbox program v1 Step 5). Admin-only page listing the role
+ * family's canonical permission keys as checkboxes reflecting the live grant
+ * rows. Secretary jurisdiction is shown read-only (managed at creation / via
+ * the edit page, never by permission toggles); organizers have no
+ * jurisdiction column -- their state/district text is shown for context.
  *
  * Save replaces the grant set wholesale (delete-then-insert in
- * adminApi.setSecretaryPermissions, RLS-enforced admin-only). Revoke takes
- * effect on the secretary's next statement -- RLS reads grants live, no
- * session refresh needed.
+ * adminApi.setSecretaryPermissions / setOrganizerPermissions, RLS-enforced
+ * admin-only). Revoke takes effect on the target's next statement -- RLS/RPC
+ * gates read grants live, no session refresh needed.
  */
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { adminApi } from '@/lib/api/admin.api';
-import { SECRETARY_PERMISSIONS, type SecretaryPermission } from '@/lib/types';
+import {
+  ORGANIZER_PERMISSIONS,
+  SECRETARY_PERMISSIONS,
+  type OrganizerPermission,
+  type SecretaryPermission,
+} from '@/lib/types';
 
-const DESCRIPTIONS: Record<SecretaryPermission, string> = {
+type AnyPermission = SecretaryPermission | OrganizerPermission;
+
+const SECRETARY_DESCRIPTIONS: Record<SecretaryPermission, string> = {
   view_players: 'View players inside jurisdiction (roster).',
   verify_players: 'Approve / reject / override registrations in scope.',
   manage_registrations: 'Monitor registrations, results, certificates, attendance (read-only).',
@@ -31,7 +40,26 @@ const DESCRIPTIONS: Record<SecretaryPermission, string> = {
   certificate_ops: 'FLAGGED default OFF — certificate issuance.',
 };
 
-export default function SecretaryPermissionsPage({
+const ORGANIZER_DESCRIPTIONS: Record<OrganizerPermission, string> = {
+  manage_events: 'Create + edit events + configure categories (gender/age/weight). No deletion.',
+  manage_registrations: 'Review registrations, mark attendance, verify player weight.',
+  manage_batches: 'Create batches + assign referees.',
+  manage_matches: 'Start, record, reopen, force-advance, replace participants.',
+  certificate_ops: 'Issue / regenerate batch certificates.',
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  'district-secretaries': 'District Secretaries',
+  'state-secretaries': 'State Secretaries',
+  organizers: 'Organizers',
+  associates: 'Associates',
+};
+
+function isSecretaryType(t: string): boolean {
+  return t === 'district-secretaries' || t === 'state-secretaries';
+}
+
+export default function PermissionsPage({
   params,
 }: {
   params: Promise<{ type: string; id: string }>;
@@ -39,12 +67,17 @@ export default function SecretaryPermissionsPage({
   const { type, id } = use(params);
   const router = useRouter();
   const valid =
-    (type === 'district-secretaries' || type === 'state-secretaries') &&
+    (isSecretaryType(type) || type === 'organizers' || type === 'associates') &&
     /^[0-9a-f-]{36}$/i.test(id);
+  const secretary = isSecretaryType(type);
+  const permKeys: readonly AnyPermission[] = secretary ? SECRETARY_PERMISSIONS : ORGANIZER_PERMISSIONS;
+  const descriptions: Record<string, string> = secretary
+    ? SECRETARY_DESCRIPTIONS
+    : ORGANIZER_DESCRIPTIONS;
 
   const [name, setName] = useState('');
   const [jurisdiction, setJurisdiction] = useState('');
-  const [checked, setChecked] = useState<Set<SecretaryPermission>>(new Set());
+  const [checked, setChecked] = useState<Set<AnyPermission>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +88,7 @@ export default function SecretaryPermissionsPage({
     (async () => {
       const [userRes, permRes] = await Promise.all([
         adminApi.getUserById(id),
-        adminApi.secretaryPermissions(id),
+        secretary ? adminApi.secretaryPermissions(id) : adminApi.organizerPermissions(id),
       ]);
       if (userRes.success && userRes.data) {
         setName(userRes.data.name);
@@ -71,9 +104,9 @@ export default function SecretaryPermissionsPage({
       }
       setLoading(false);
     })();
-  }, [id, valid]);
+  }, [id, valid, secretary]);
 
-  function toggle(p: SecretaryPermission) {
+  function toggle(p: AnyPermission) {
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(p)) next.delete(p);
@@ -85,7 +118,9 @@ export default function SecretaryPermissionsPage({
   async function handleSave() {
     setSaving(true);
     setMessage(null);
-    const res = await adminApi.setSecretaryPermissions(id, [...checked]);
+    const res = secretary
+      ? await adminApi.setSecretaryPermissions(id, [...checked] as SecretaryPermission[])
+      : await adminApi.setOrganizerPermissions(id, [...checked] as OrganizerPermission[]);
     setSaving(false);
     if (res.success) {
       setMessage('Permissions saved. Revoked capabilities stop working on the next request.');
@@ -94,24 +129,31 @@ export default function SecretaryPermissionsPage({
     }
   }
 
-  if (!valid) return <p className="text-red-600">Unknown secretary.</p>;
+  if (!valid) return <p className="text-red-600">Unknown user type.</p>;
   if (loading) return <p className="text-gray-500">Loading permissions…</p>;
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <Link href={`/admin/users/${type}`} className="text-sm text-blue-700 underline">
-        ← Back to {type === 'district-secretaries' ? 'District Secretaries' : 'State Secretaries'}
+        ← Back to {TYPE_LABELS[type] ?? type}
       </Link>
       <div>
         <h1 className="text-lg font-bold">Permissions — {name || id}</h1>
-        <p className="text-sm text-gray-500">Jurisdiction (fixed, not editable here): {jurisdiction}</p>
+        <p className="text-sm text-gray-500">
+          {secretary ? 'Jurisdiction (fixed, not editable here)' : 'Location (context only)'}: {jurisdiction}
+        </p>
+        {!secretary && (
+          <p className="text-xs text-gray-500">
+            Row present = ON, absent = OFF. New organizers start with no permissions until ticked here.
+          </p>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {message && <p className="text-sm text-green-700">{message}</p>}
 
       <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4">
-        {SECRETARY_PERMISSIONS.map((p) => (
+        {permKeys.map((p) => (
           <label key={p} className="flex cursor-pointer items-start gap-3 text-sm">
             <input
               type="checkbox"
@@ -121,7 +163,7 @@ export default function SecretaryPermissionsPage({
             />
             <span>
               <span className="font-mono font-medium">{p}</span>
-              <span className="block text-xs text-gray-500">{DESCRIPTIONS[p]}</span>
+              <span className="block text-xs text-gray-500">{descriptions[p]}</span>
             </span>
           </label>
         ))}

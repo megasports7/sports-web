@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState, useSyncExternalStore } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { Registration } from '@/lib/types';
 import {
   downloadAllRegistrationsWorkbook,
@@ -69,6 +70,7 @@ function StatusPill({ status }: { status: string }) {
 function Actions({
   r,
   busy,
+  canReview,
   onApprove,
   onReject,
   onAttend,
@@ -77,26 +79,29 @@ function Actions({
 }: {
   r: Registration;
   busy: boolean;
+  /** Convenience-only: review_registration / mark_attendance / verify RPCs authorize server-side. */
+  canReview: boolean;
   onApprove: () => void;
   onReject: () => void;
   onAttend: () => void;
   onVerify: () => void;
   block?: boolean;
 }) {
+  const needPerm = canReview ? undefined : 'Needs the manage_registrations permission — ask an admin.';
   return (
     <div className={`actions ${block ? 'actions-block' : ''}`}>
-      <button className="btn-approve" disabled={busy || r.status === 'approved'} onClick={onApprove}>
+      <button className="btn-approve" disabled={busy || r.status === 'approved' || !canReview} title={needPerm} onClick={onApprove}>
         Approve
       </button>
-      <button className="btn-reject" disabled={busy || r.status === 'rejected'} onClick={onReject}>
+      <button className="btn-reject" disabled={busy || r.status === 'rejected' || !canReview} title={needPerm} onClick={onReject}>
         Reject
       </button>
       {r.attendance_status !== 'present' && (
-        <button className="btn-attend" disabled={busy} onClick={onAttend}>
+        <button className="btn-attend" disabled={busy || !canReview} title={needPerm} onClick={onAttend}>
           Mark attendance
         </button>
       )}
-      <button className="btn-verify" disabled={busy || !r.player_uuid || r.status === 'rejected'} onClick={onVerify}>
+      <button className="btn-verify" disabled={busy || !r.player_uuid || r.status === 'rejected' || !canReview} title={needPerm} onClick={onVerify}>
         Verify weight
       </button>
     </div>
@@ -108,6 +113,10 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
   // through as a plain string end to end, per the Number(event_id)-on-a-uuid
   // bug already found elsewhere in this app.
   const { id } = use(params);
+  // Convenience-only: hides review actions without manage_registrations.
+  // Authorization stays server-side (review/attendance/verify RPC gates).
+  const { perms } = useOrganizerPermissions();
+  const canReview = canDo(perms, 'manage_registrations');
 
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [eventName, setEventName] = useState<string | null>(null);
@@ -305,6 +314,9 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
             {registrations.length} total · {approvedCount} approved · {pendingCount} pending · {rejectedCount} rejected
           </p>
         )}
+        {!canReview && (
+          <p className="text-muted">Review actions are disabled for this account — ask an admin for manage_registrations.</p>
+        )}
       </div>
 
       {registrations.length === 0 ? (
@@ -402,6 +414,7 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
                         <Actions
                           r={r}
                           busy={busy}
+                          canReview={canReview}
                           onApprove={() => handleStatus(r.registration_id, 'approved')}
                           onReject={() => handleStatus(r.registration_id, 'rejected')}
                           onAttend={() => handleAttendance(r.registration_id)}
@@ -433,6 +446,7 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
                   <Actions
                     r={r}
                     busy={busy}
+                    canReview={canReview}
                     block
                     onApprove={() => handleStatus(r.registration_id, 'approved')}
                     onReject={() => handleStatus(r.registration_id, 'rejected')}

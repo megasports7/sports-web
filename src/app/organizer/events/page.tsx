@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { Event } from '@/lib/types';
 
 function CalendarIcon() {
@@ -75,6 +76,10 @@ function SettingsIcon() {
 export default function OrganizerEventsPage() {
   // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
   const orgParam = useOrgParam();
+  // Convenience-only: hides the create entry points without manage_events.
+  // Authorization stays server-side (events_insert_organizer + RPC gates).
+  const { perms } = useOrganizerPermissions();
+  const canCreateEvents = canDo(perms, 'manage_events');
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,11 +104,21 @@ export default function OrganizerEventsPage() {
           <h1>Events</h1>
           <p>Manage registrations and attendance scanning for each event.</p>
         </div>
-        <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
-          <PlusIcon />
-          Create event
-        </Link>
+        {canCreateEvents ? (
+          <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
+            <PlusIcon />
+            Create event
+          </Link>
+        ) : (
+          <span className="create-cta" aria-disabled="true" title="Needs the manage_events permission — ask an admin.">
+            <PlusIcon />
+            Create event
+          </span>
+        )}
       </div>
+      {!canCreateEvents && (
+        <p className="perm-note">Event creation is disabled for this account — ask an admin for manage_events.</p>
+      )}
 
       {events.length === 0 ? (
         <div className="empty">
@@ -111,11 +126,17 @@ export default function OrganizerEventsPage() {
             <CalendarIcon />
           </div>
           <h2>No events yet</h2>
-          <p>Create your first event to start taking registrations.</p>
-          <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
-            <PlusIcon />
-            Create event
-          </Link>
+          <p>
+            {canCreateEvents
+              ? 'Create your first event to start taking registrations.'
+              : 'No events yet. An admin can grant this account event creation.'}
+          </p>
+          {canCreateEvents && (
+            <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
+              <PlusIcon />
+              Create event
+            </Link>
+          )}
         </div>
       ) : (
         <div className="events-list">
@@ -209,6 +230,15 @@ export default function OrganizerEventsPage() {
         :global(.create-cta svg) {
           width: 17px;
           height: 17px;
+        }
+        :global(.create-cta[aria-disabled='true']) {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .perm-note {
+          margin: 0;
+          font-size: 13.5px;
+          color: var(--color-muted);
         }
 
         .events-list {

@@ -399,6 +399,20 @@ export const SECRETARY_PERMISSIONS = [
 ] as const;
 export type SecretaryPermission = (typeof SECRETARY_PERMISSIONS)[number];
 
+/** Organizer/associate checkbox permissions (organizer program v1, Step 0).
+ *  Must stay in sync with organizer_permissions rows +
+ *  has_organizer_permission() gates. Same row=ON/absent=OFF semantics as
+ *  secretaries; grants are strictly per-account (no organizer↔associate
+ *  inheritance). No delete key: event/batch deletion stays admin-only. */
+export const ORGANIZER_PERMISSIONS = [
+  'manage_events',
+  'manage_registrations',
+  'manage_batches',
+  'manage_matches',
+  'certificate_ops',
+] as const;
+export type OrganizerPermission = (typeof ORGANIZER_PERMISSIONS)[number];
+
 /** Canonical master-data rows (states/districts tables). */
 export interface GeoState {
   id: string;

@@ -4,12 +4,16 @@ import { use, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { Batch, Referee } from '@/lib/types';
 
 export default function EventBatchesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
   const orgParam = useOrgParam();
+  // Convenience-only: batches_update_owner authorizes referee assignment.
+  const { perms } = useOrganizerPermissions();
+  const canManageBatches = canDo(perms, 'manage_batches');
 
   const [batches, setBatches] = useState<Batch[]>([]);
   const [referees, setReferees] = useState<Referee[]>([]);
@@ -96,19 +100,30 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
           <Link href={withOrg(`/organizer/events/${id}/batches/certificates`, orgParam)} className="btn-secondary">
             View certificates
           </Link>
-          <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
-            + Create batch
-          </Link>
+          {canManageBatches ? (
+            <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
+              + Create batch
+            </Link>
+          ) : (
+            <span className="btn-primary" aria-disabled="true" title="Needs the manage_batches permission — ask an admin.">
+              + Create batch
+            </span>
+          )}
         </div>
       </div>
+      {!canManageBatches && (
+        <p className="text-muted">Batch creation and referee assignment are disabled for this account — ask an admin for manage_batches.</p>
+      )}
 
       {batches.length === 0 ? (
         <div className="empty">
           <h2>No batches yet</h2>
-          <p>Create a batch to start building the bracket.</p>
-          <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
-            + Create batch
-          </Link>
+          <p>{canManageBatches ? 'Create a batch to start building the bracket.' : 'No batches yet.'}</p>
+          {canManageBatches && (
+            <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
+              + Create batch
+            </Link>
+          )}
         </div>
       ) : (
         <div className="batches-list">
@@ -155,7 +170,8 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
                   </select>
                   <button
                     className="btn-confirm"
-                    disabled={!refereeChanged(b) || assigningId === b.batch_id}
+                    disabled={!refereeChanged(b) || assigningId === b.batch_id || !canManageBatches}
+                    title={canManageBatches ? undefined : 'Needs the manage_batches permission — ask an admin.'}
                     onClick={() => handleConfirmReferee(b.batch_id, refereeValue(b))}
                   >
                     {assigningId === b.batch_id ? 'Saving…' : 'Confirm'}

@@ -4,12 +4,16 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
 import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { GeoDistrict, GeoState } from '@/lib/types';
 
 export default function NewEventPage() {
   // Phase 4: preserve admin-in-organizer ?org= when returning to the list.
   const orgParam = useOrgParam();
   const router = useRouter();
+  // Convenience-only: the server (events_insert_organizer) authorizes.
+  const { perms } = useOrganizerPermissions();
+  const canCreateEvents = canDo(perms, 'manage_events');
   const [eventName, setEventName] = useState('');
   const [venue, setVenue] = useState('');
   // <input type="date"> instead of the mobile app's free-text date field --
@@ -168,10 +172,14 @@ export default function NewEventPage() {
         </label>
 
         {error && <p className="text-corner-red">{error}</p>}
+        {!canCreateEvents && (
+          <p className="text-corner-red">Event creation is disabled for this account — ask an admin for manage_events.</p>
+        )}
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || !canCreateEvents}
+          title={canCreateEvents ? undefined : 'Needs the manage_events permission — ask an admin.'}
           className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {submitting ? 'Creating…' : 'Create event'}

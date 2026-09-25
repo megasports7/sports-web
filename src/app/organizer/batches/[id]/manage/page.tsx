@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { Batch, BatchPlayer, OrganizerMatch, Referee, StandingRow } from '@/lib/types';
 
 type Panel = { matchId: string; type: 'record' | 'advance' | 'replace' };
@@ -34,6 +35,12 @@ const BYE_LABELS: Record<string, string> = {
 
 export default function BatchManagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  // Convenience-only: match RPCs + batches_update_owner authorize server-side.
+  // canConduct gates start/record/reopen/force-advance/replace (manage_matches);
+  // canAssignRef gates referee assignment (manage_batches per Step 0).
+  const { perms } = useOrganizerPermissions();
+  const canConduct = canDo(perms, 'manage_matches');
+  const canAssignRef = canDo(perms, 'manage_batches');
 
   const [batch, setBatch] = useState<Batch | null>(null);
   const [matches, setMatches] = useState<OrganizerMatch[]>([]);
@@ -350,6 +357,15 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
         )}
       </div>
 
+      {(!canConduct || !canAssignRef) && (
+        <p className="text-muted">
+          {!canConduct && !canAssignRef
+            ? 'Match controls and referee assignment are disabled for this account — ask an admin for manage_matches / manage_batches.'
+            : !canConduct
+              ? 'Match controls are disabled for this account — ask an admin for manage_matches.'
+              : 'Referee assignment is disabled for this account — ask an admin for manage_batches.'}
+        </p>
+      )}
       <div className="card">
         <h2>Referee</h2>
         <div className="ref-row">
@@ -361,7 +377,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
               </option>
             ))}
           </select>
-          <button className="btn-confirm" onClick={handleConfirmReferee} disabled={!refereeChanged || savingReferee}>
+          <button className="btn-confirm" onClick={handleConfirmReferee} disabled={!refereeChanged || savingReferee || !canAssignRef} title={canAssignRef ? undefined : 'Needs the manage_batches permission — ask an admin.'}>
             {savingReferee ? 'Saving…' : 'Confirm'}
           </button>
         </div>
@@ -452,7 +468,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
 
                       <div className="actions">
                         {canStart && (
-                          <button className="btn-action-primary" onClick={() => handleStart(match)} disabled={busy}>
+                          <button className="btn-action-primary" onClick={() => handleStart(match)} disabled={busy || !canConduct} title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}>
                             Start
                           </button>
                         )}
@@ -475,13 +491,14 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           <button
                             className="btn-action-primary"
                             onClick={() => (isPanelHere && panel?.type === 'record' ? closePanel() : openPanel(match.match_id, 'record'))}
-                            disabled={busy}
+                            disabled={busy || !canConduct}
+                            title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}
                           >
                             Record result
                           </button>
                         )}
                         {canReopen && (
-                          <button className="chip" onClick={() => handleReopen(match)} disabled={busy}>
+                          <button className="chip" onClick={() => handleReopen(match)} disabled={busy || !canConduct} title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}>
                             Reopen
                           </button>
                         )}
@@ -489,7 +506,8 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           <button
                             className="chip"
                             onClick={() => (isPanelHere && panel?.type === 'advance' ? closePanel() : openPanel(match.match_id, 'advance'))}
-                            disabled={busy}
+                            disabled={busy || !canConduct}
+                            title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}
                           >
                             Force advance
                           </button>
@@ -498,7 +516,8 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           <button
                             className="chip"
                             onClick={() => (isPanelHere && panel?.type === 'replace' ? closePanel() : openPanel(match.match_id, 'replace'))}
-                            disabled={busy}
+                            disabled={busy || !canConduct}
+                            title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}
                           >
                             Replace participant
                           </button>
@@ -544,7 +563,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                             />
                           </div>
                           <div className="panel-actions">
-                            <button className="btn-submit" onClick={() => submitRecord(match)} disabled={busy}>
+                            <button className="btn-submit" onClick={() => submitRecord(match)} disabled={busy || !canConduct}>
                               Submit
                             </button>
                             <button className="btn-cancel" onClick={closePanel}>
@@ -575,7 +594,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                             {match.player2_name ?? 'TBD'}
                           </label>
                           <div className="panel-actions">
-                            <button className="btn-submit" onClick={() => submitAdvance(match)} disabled={busy}>
+                            <button className="btn-submit" onClick={() => submitAdvance(match)} disabled={busy || !canConduct}>
                               Confirm
                             </button>
                             <button className="btn-cancel" onClick={closePanel}>
@@ -614,7 +633,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                             ))}
                           </select>
                           <div className="panel-actions">
-                            <button className="btn-submit" onClick={() => submitReplace(match)} disabled={busy}>
+                            <button className="btn-submit" onClick={() => submitReplace(match)} disabled={busy || !canConduct}>
                               Confirm
                             </button>
                             <button className="btn-cancel" onClick={closePanel}>

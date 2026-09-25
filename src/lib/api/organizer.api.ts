@@ -34,6 +34,7 @@ import type {
   BatchPlayer,
   Referee,
   OrganizerMatch,
+  OrganizerPermission,
   StandingRow,
   FilteredPlayer,
   AttendanceList,
@@ -1417,6 +1418,33 @@ export const organizerApi = {
           null,
       }));
       return toApiResponse({ data: rows, error: null });
+    })();
+  },
+
+  /** Own live grant set (organizer checkbox program v1). Convenience ONLY --
+   *  drives hide/disable of actions the account cannot perform; every write
+   *  is still authorized server-side by RLS + RPC ownership + permission
+   *  gates, so revocation takes effect regardless of what this returns.
+   *  Reads the caller's own rows via organizer_permissions_select_own. A
+   *  failed read (e.g. migrations not yet applied) surfaces as an error and
+   *  callers treat unknown as full-access UI -- fail-open display, never the
+   *  boundary. Works for both organizer and associate roles (per-account
+   *  rows, no inheritance). */
+  myPermissions(): Promise<ApiResponse<OrganizerPermission[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data: session } = await supabase.auth.getSession();
+      const uid = session.session?.user?.id;
+      if (!uid) return toApiResponse<OrganizerPermission[]>({ data: null, error: { message: 'Not signed in' } });
+      const { data, error } = await supabase
+        .from('organizer_permissions')
+        .select('permission')
+        .eq('organizer_id', uid);
+      if (error) return toApiResponse<OrganizerPermission[]>({ data: null, error });
+      return toApiResponse({
+        data: (data ?? []).map((r) => r.permission as OrganizerPermission),
+        error: null,
+      });
     })();
   },
 };
