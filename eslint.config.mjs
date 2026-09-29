@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Nested git worktrees live under the repo root; without this, a bare
+    // `eslint` run recurses into them and double-lints every shared file.
+    ".worktrees/**",
   ]),
 ]);
 
