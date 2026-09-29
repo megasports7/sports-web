@@ -264,7 +264,7 @@ export default function ConfigureEventCategoriesPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="secondary" onClick={activateV2} disabled={activating || publishedCount === 0 || !canConfigure} title={canConfigure ? undefined : 'Needs the manage_events permission — ask an admin.'}>
-            {activating ? 'Activating…' : 'Activate v2 (QA)'}
+            {activating ? 'Activating…' : 'Activate v2'}
           </button>
           <button type="button" className="primary" onClick={startAdd} disabled={!canConfigure} title={canConfigure ? undefined : 'Needs the manage_events permission — ask an admin.'}>Add category</button>
         </div>
