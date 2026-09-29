@@ -119,7 +119,6 @@ export default function ConfigureEventCategoriesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [activating, setActivating] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -242,16 +241,6 @@ export default function ConfigureEventCategoriesPage() {
     refreshCategories();
   }
 
-  async function activateV2() {
-    if (!eventId) return;
-    setActivating(true); setError(null); setMessage(null);
-    const result = await organizerApi.activateEventV2(eventId as string);
-    setActivating(false);
-    if (!result.success) { setError(result.message || 'Could not activate v2. Need at least one published category.'); return; }
-    setMessage('Event activated to v2 — players now see configured categories with eligibility preview.');
-    refreshCategories();
-  }
-
   if (loading) return <p className="text-muted">Loading category configuration…</p>;
 
   return (
@@ -260,12 +249,9 @@ export default function ConfigureEventCategoriesPage() {
         <div>
           <Link href={withOrg('/organizer/events', orgParam)} className="back-link">← Events</Link>
           <h1>Configure categories</h1>
-          <p>{eventName} · Shared Supabase configuration only. Publish, then Activate v2 for players to see configured categories.</p>
+          <p>{eventName} · Publish a category for players to see it with live eligibility.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="secondary" onClick={activateV2} disabled={activating || publishedCount === 0 || !canConfigure} title={canConfigure ? undefined : 'Needs the manage_events permission — ask an admin.'}>
-            {activating ? 'Activating…' : 'Activate v2'}
-          </button>
           <button type="button" className="primary" onClick={startAdd} disabled={!canConfigure} title={canConfigure ? undefined : 'Needs the manage_events permission — ask an admin.'}>Add category</button>
         </div>
       </div>

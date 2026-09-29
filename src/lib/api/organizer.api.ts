@@ -578,14 +578,6 @@ export const organizerApi = {
     })();
   },
 
-  activateEventV2(eventId: string): Promise<ApiResponse<void>> {
-    return (async () => {
-      const supabase = createClient();
-      const { error } = await supabase.rpc('activate_event_registration_v2', { p_event_id: eventId });
-      return toApiResponse<void>({ data: undefined, error });
-    })();
-  },
-
   /** banner_image_file (a real File), not banner_image_uri -- the mobile
    *  signature's file://-uri field has no web equivalent; the browser file
    *  input hands back a File directly, which is simpler to upload, not a
