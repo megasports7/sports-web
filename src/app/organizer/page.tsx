@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
 import type { AttendanceList, Event, OrganizerDashboardData } from '@/lib/types';
 
 function initials(name: string) {
@@ -85,6 +86,8 @@ function BoltIcon() {
 
 export default function OrganizerHome() {
   const router = useRouter();
+  // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
+  const orgParam = useOrgParam();
   const [data, setData] = useState<OrganizerDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +139,7 @@ export default function OrganizerHome() {
   }, []);
 
   function handleStartRapid() {
-    if (rapidEventId) router.push(`/organizer/events/${rapidEventId}/rapid-mode`);
+    if (rapidEventId) router.push(withOrg(`/organizer/events/${rapidEventId}/rapid-mode`, orgParam));
   }
 
   if (loading) return <p className="text-muted">Loading dashboard…</p>;
@@ -156,7 +159,7 @@ export default function OrganizerHome() {
             <div className="welcome-email">{organizer.email}</div>
           </div>
         </div>
-        <Link href="/organizer/events/new" className="create-cta">
+        <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
           <PlusIcon />
           Create event
         </Link>
@@ -197,7 +200,7 @@ export default function OrganizerHome() {
       </div>
 
       {pending > 0 && (
-        <Link href="/organizer/events" className="attention">
+        <Link href={withOrg('/organizer/events', orgParam)} className="attention">
           <span className="attention-icon">
             <ClockIcon />
           </span>
@@ -216,7 +219,7 @@ export default function OrganizerHome() {
           <p className="section-title" style={{ margin: 0 }}>
             Recent events
           </p>
-          <Link href="/organizer/events" className="view-all">
+          <Link href={withOrg('/organizer/events', orgParam)} className="view-all">
             View all →
           </Link>
         </div>
@@ -228,7 +231,7 @@ export default function OrganizerHome() {
             </div>
             <h2>No events yet</h2>
             <p>Create your first event to start taking registrations.</p>
-            <Link href="/organizer/events/new" className="create-cta">
+            <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
               <PlusIcon />
               Create event
             </Link>
@@ -236,7 +239,7 @@ export default function OrganizerHome() {
         ) : (
           <div className="events-list">
             {recent_events.map((e) => (
-              <Link key={e.event_id} href={`/organizer/events/${e.event_id}/registrations`} className="event-row">
+              <Link key={e.event_id} href={withOrg(`/organizer/events/${e.event_id}/registrations`, orgParam)} className="event-row">
                 {e.event_date && (
                   <span className="date-badge">
                     <span className="mon">{new Date(e.event_date).toLocaleDateString(undefined, { month: 'short' })}</span>
@@ -277,7 +280,7 @@ export default function OrganizerHome() {
               <p className="tool-empty">No attendance lists yet.</p>
             ) : (
               recentLists.map((l) => (
-                <Link key={l.list_id} href={`/organizer/lists/${l.list_id}/scan`} className="tool-row">
+                <Link key={l.list_id} href={withOrg(`/organizer/lists/${l.list_id}/scan`, orgParam)} className="tool-row">
                   <span className="tool-row-title">{l.purpose || l.mode || 'Attendance list'}</span>
                   <span className="tool-row-meta">{l.event_name}</span>
                 </Link>

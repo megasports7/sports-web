@@ -31,6 +31,7 @@ This repository is the Next.js 16 web client. Source is under `src/`, types in `
 - Aadhaar lives **only** in `player_sensitive_ids` (self + admin read), never in `profiles`; NSRD goes to `profiles.nsrd_id`. Never render Aadhaar back to UI.
 - Admin `admin-update-user` changes the password for **any** non-empty `password` value — admin UI must keep password fields blank with a confirm-match gate plus `autocomplete="new-password"`.
 - Icons are hand-rolled inline SVGs (no icon library): always set intrinsic `width`/`height` on the element, never rely solely on stylesheet scoping.
+- Admin-in-organizer context (Phase 4): admins enter `/organizer` only via `?org=<organizer-uuid>` (proxy gate); `OrgContextHost` + `organizerApi.setOrgContextUid()` scope reads/operations, profile/photo stay self-scoped, and every in-dashboard link must preserve `?org=` via `withOrg()`. The param is navigation-only — RLS/RPCs authorize, triggers attribute.
 - QA/demo-only code (demo verify button, Activate-v2 button) must be stripped or flagged before QA ever merges to `main`.
 
 ## Validation

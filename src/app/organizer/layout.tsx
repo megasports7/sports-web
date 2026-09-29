@@ -1,4 +1,6 @@
+import { Suspense } from 'react';
 import { OrganizerNav } from './OrganizerNav';
+import { OrgContextHost } from '@/lib/auth/orgContext';
 
 export default function OrganizerLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,6 +12,11 @@ export default function OrganizerLayout({ children }: { children: React.ReactNod
       }}
     >
       <OrganizerNav />
+      {/* Phase 4: admin-in-organizer-context banner + scoping host.
+          Suspense boundary is required by useSearchParams. */}
+      <Suspense fallback={null}>
+        <OrgContextHost />
+      </Suspense>
       <div className="mx-auto max-w-5xl px-9 py-7">{children}</div>
     </div>
   );

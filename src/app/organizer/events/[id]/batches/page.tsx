@@ -3,10 +3,17 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { Batch, Referee } from '@/lib/types';
 
 export default function EventBatchesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
+  const orgParam = useOrgParam();
+  // Convenience-only: batches_update_owner authorizes referee assignment.
+  const { perms } = useOrganizerPermissions();
+  const canManageBatches = canDo(perms, 'manage_batches');
 
   const [batches, setBatches] = useState<Batch[]>([]);
   const [referees, setReferees] = useState<Referee[]>([]);
@@ -20,6 +27,13 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
   // by batch id; falls back to the batch's own saved referee_id whenever
   // there's no pending edit for it.
   const [pendingRef, setPendingRef] = useState<Record<string, string>>({});
+
+  // Bracket-engine short labels (M1/M3 columns arrive via select('*')).
+  const FORMAT_LABELS: Record<string, string> = {
+    single_elimination: 'Single elim',
+    double_elimination: 'Double elim',
+    round_robin: 'Round robin',
+  };
 
   const loadBatches = useCallback(async () => {
     const res = await organizerApi.eventBatches(id);
@@ -83,22 +97,33 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
           {eventName && <p className="event-name">{eventName}</p>}
         </div>
         <div className="head-actions">
-          <Link href={`/organizer/events/${id}/batches/certificates`} className="btn-secondary">
+          <Link href={withOrg(`/organizer/events/${id}/batches/certificates`, orgParam)} className="btn-secondary">
             View certificates
           </Link>
-          <Link href={`/organizer/events/${id}/batches/create`} className="btn-primary">
-            + Create batch
-          </Link>
+          {canManageBatches ? (
+            <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
+              + Create batch
+            </Link>
+          ) : (
+            <span className="btn-primary" aria-disabled="true" title="Needs the manage_batches permission — ask an admin.">
+              + Create batch
+            </span>
+          )}
         </div>
       </div>
+      {!canManageBatches && (
+        <p className="text-muted">Batch creation and referee assignment are disabled for this account — ask an admin for manage_batches.</p>
+      )}
 
       {batches.length === 0 ? (
         <div className="empty">
           <h2>No batches yet</h2>
-          <p>Create a batch to start building the bracket.</p>
-          <Link href={`/organizer/events/${id}/batches/create`} className="btn-primary">
-            + Create batch
-          </Link>
+          <p>{canManageBatches ? 'Create a batch to start building the bracket.' : 'No batches yet.'}</p>
+          {canManageBatches && (
+            <Link href={withOrg(`/organizer/events/${id}/batches/create`, orgParam)} className="btn-primary">
+              + Create batch
+            </Link>
+          )}
         </div>
       ) : (
         <div className="batches-list">
@@ -108,12 +133,20 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
                 <div className="batch-info">
                   <span className="batch-name">{b.batch_name}</span>
                   {b.batch_label && <span className="batch-cat">{b.batch_label}</span>}
+                  {b.tournament_format && (
+                    <span
+                      className="batch-format"
+                      title={b.bye_method && b.bye_method !== 'random' ? `Byes: ${b.bye_method}` : undefined}
+                    >
+                      {FORMAT_LABELS[b.tournament_format] ?? b.tournament_format}
+                    </span>
+                  )}
                 </div>
                 <div className="batch-count">
                   <span className="n">{b.player_count ?? 0}</span>
                   <span className="l">Players</span>
                 </div>
-                <Link href={`/organizer/batches/${b.batch_id}/manage`} className="btn-manage">
+                <Link href={withOrg(`/organizer/batches/${b.batch_id}/manage`, orgParam)} className="btn-manage">
                   Manage
                 </Link>
               </div>
@@ -137,7 +170,8 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
                   </select>
                   <button
                     className="btn-confirm"
-                    disabled={!refereeChanged(b) || assigningId === b.batch_id}
+                    disabled={!refereeChanged(b) || assigningId === b.batch_id || !canManageBatches}
+                    title={canManageBatches ? undefined : 'Needs the manage_batches permission — ask an admin.'}
                     onClick={() => handleConfirmReferee(b.batch_id, refereeValue(b))}
                   >
                     {assigningId === b.batch_id ? 'Saving…' : 'Confirm'}
@@ -271,6 +305,16 @@ export default function EventBatchesPage({ params }: { params: Promise<{ id: str
           font-size: 13px;
           color: #3a3d45;
           font-weight: 500;
+        }
+        .batch-format {
+          align-self: flex-start;
+          margin-top: 3px;
+          border-radius: 999px;
+          padding: 3px 9px;
+          font-size: 11px;
+          font-weight: 800;
+          color: #3a3d45;
+          background: color-mix(in srgb, var(--color-accent-green) 12%, white);
         }
         .batch-count {
           flex-shrink: 0;

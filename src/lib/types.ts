@@ -4,7 +4,14 @@
  * contract's "direct close port" principle applied to types too, not just
  * API functions.
  */
-export type UserRole = 'player' | 'organizer' | 'referee' | 'admin' | 'associate';
+export type UserRole =
+  | 'player'
+  | 'organizer'
+  | 'referee'
+  | 'admin'
+  | 'associate'
+  | 'district_secretary'
+  | 'state_secretary';
 
 export interface User {
   id: number;
@@ -92,6 +99,10 @@ export interface Event {
   organizer_id?: string;
   organizer_name?: string;
   status?: string;
+  /** Canonical event geography (Step 8a): selected at creation from master
+   *  data, the single source of truth for secretary scoping downstream. */
+  state_id?: string | null;
+  district_id?: string | null;
   created_at?: string;
   player_count?: number;
   registration_id?: string | null;
@@ -99,6 +110,46 @@ export interface Event {
   event_category?: string | null;
   age_category?: string | null;
   weight_category?: string | null;
+}
+
+// ===================== Configured event categories =====================
+// This mirrors the mobile Phase 3 category contract. Categories remain
+// configuration-only until later phases explicitly activate v2 registration.
+export type ConfiguredCompetitionType = 'TANDING' | 'SENI';
+export type ConfiguredWeightRuleMode = 'range' | 'measurement_only' | 'not_applicable';
+
+export interface ConfiguredEventCategory {
+  id: string;
+  event_id: string;
+  code: string;
+  competition_type: ConfiguredCompetitionType;
+  age_label: string;
+  minimum_age: number;
+  maximum_age: number | null;
+  gender: 'male' | 'female';
+  weight_rule_mode: ConfiguredWeightRuleMode;
+  weight_label: string | null;
+  minimum_weight_kg: number | null;
+  maximum_weight_kg: number | null;
+  seni_category: string | null;
+  is_published: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface ConfiguredEventCategoryInput {
+  code: string;
+  competition_type: ConfiguredCompetitionType;
+  age_label: string;
+  minimum_age: number;
+  maximum_age: number | null;
+  gender: 'male' | 'female';
+  weight_rule_mode: ConfiguredWeightRuleMode;
+  weight_label: string | null;
+  minimum_weight_kg: number | null;
+  maximum_weight_kg: number | null;
+  seni_category: string | null;
 }
 
 // ===================== Match =====================
@@ -201,6 +252,12 @@ export interface Batch {
   referee_name?: string | null;
   player_count?: number;
   created_at?: string;
+  // M1/M3 bracket-engine columns (batches.select('*') already returns them;
+  // typed optional so legacy rows / older selects stay valid).
+  tournament_format?: string | null;
+  bye_method?: string | null;
+  seeding_method?: string | null;
+  grand_final_reset?: boolean | null;
 }
 
 export interface BatchPlayer {
@@ -269,12 +326,28 @@ export interface OrganizerMatch {
   player2_score?: number;
   status?: string;
   scheduled_at?: string;
+  // Raw matches row carries this (batchMatches selects '*'); the manage
+  // page derives the in-progress timer base from it when no local start
+  // timestamp exists yet (e.g. match started on another device).
+  updated_at?: string;
 }
 
 // referee.api.ts's matches() returns the identical shape (same raw matches
 // row + the same player1_name/player2_name resolution) -- a type alias
 // keeps both call sites semantically named without duplicating the fields.
 export type RefereeMatch = OrganizerMatch;
+
+// Row of the rr_standings view (M3b §42: played/wins/losses/points,
+// win = 3 pts, decided matches only, points DESC, wins DESC). Counts arrive
+// as JSON numbers; the API mapper still coerces defensively.
+export interface StandingRow {
+  batch_id: string;
+  player_id: string;
+  played: number;
+  wins: number;
+  losses: number;
+  points: number;
+}
 
 export interface FilteredPlayer {
   registration_id: string;
@@ -289,6 +362,68 @@ export interface FilteredPlayer {
   weight_category?: string;
   seni_category?: string;
   status?: string;
+}
+
+// ===================== Secretaries (plan v2) =====================
+// Dedicated supervisory roles -- NOT organizer/associate reuse. Jurisdiction
+// (assigned_district_id / state) and per-secretary permission grants live in
+// Postgres; the client only ever reads its own scope through the geo RLS
+// policies, and gates section visibility off myPermissions() (convenience,
+// never the boundary).
+export interface Secretary {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  state?: string;
+  district?: string;
+  assigned_district_id?: string | null;
+  status?: string;
+  photo?: string | null;
+}
+
+/** Canonical v1 permission keys (plan v2). Must stay in sync with
+ *  secretary_permissions rows + has_secretary_permission() gates. */
+export const SECRETARY_PERMISSIONS = [
+  'view_players',
+  'verify_players',
+  'manage_registrations',
+  'manage_events',
+  'create_events',
+  'delete_events',
+  'manage_batches',
+  'manage_matches',
+  'attendance_ops',
+  'referee_mgmt',
+  'certificate_ops',
+] as const;
+export type SecretaryPermission = (typeof SECRETARY_PERMISSIONS)[number];
+
+/** Organizer/associate checkbox permissions (organizer program v1, Step 0).
+ *  Must stay in sync with organizer_permissions rows +
+ *  has_organizer_permission() gates. Same row=ON/absent=OFF semantics as
+ *  secretaries; grants are strictly per-account (no organizer↔associate
+ *  inheritance). No delete key: event/batch deletion stays admin-only. */
+export const ORGANIZER_PERMISSIONS = [
+  'manage_events',
+  'manage_registrations',
+  'manage_batches',
+  'manage_matches',
+  'certificate_ops',
+] as const;
+export type OrganizerPermission = (typeof ORGANIZER_PERMISSIONS)[number];
+
+/** Canonical master-data rows (states/districts tables). */
+export interface GeoState {
+  id: string;
+  name: string;
+  code: string;
+}
+export interface GeoDistrict {
+  id: string;
+  state_id: string;
+  name: string;
+  code: string;
 }
 
 // ===================== Admin =====================

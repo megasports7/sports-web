@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState, useSyncExternalStore } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { Registration } from '@/lib/types';
 import {
   downloadAllRegistrationsWorkbook,
@@ -69,6 +70,7 @@ function StatusPill({ status }: { status: string }) {
 function Actions({
   r,
   busy,
+  canReview,
   onApprove,
   onReject,
   onAttend,
@@ -77,26 +79,29 @@ function Actions({
 }: {
   r: Registration;
   busy: boolean;
+  /** Convenience-only: review_registration / mark_attendance / verify RPCs authorize server-side. */
+  canReview: boolean;
   onApprove: () => void;
   onReject: () => void;
   onAttend: () => void;
   onVerify: () => void;
   block?: boolean;
 }) {
+  const needPerm = canReview ? undefined : 'Needs the manage_registrations permission — ask an admin.';
   return (
     <div className={`actions ${block ? 'actions-block' : ''}`}>
-      <button className="btn-approve" disabled={busy || r.status === 'approved'} onClick={onApprove}>
+      <button className="btn-approve" disabled={busy || r.status === 'approved' || !canReview} title={needPerm} onClick={onApprove}>
         Approve
       </button>
-      <button className="btn-reject" disabled={busy || r.status === 'rejected'} onClick={onReject}>
+      <button className="btn-reject" disabled={busy || r.status === 'rejected' || !canReview} title={needPerm} onClick={onReject}>
         Reject
       </button>
       {r.attendance_status !== 'present' && (
-        <button className="btn-attend" disabled={busy} onClick={onAttend}>
+        <button className="btn-attend" disabled={busy || !canReview} title={needPerm} onClick={onAttend}>
           Mark attendance
         </button>
       )}
-      <button className="btn-verify" disabled={busy || !r.player_uuid || r.status === 'rejected'} onClick={onVerify}>
+      <button className="btn-verify" disabled={busy || !r.player_uuid || r.status === 'rejected' || !canReview} title={needPerm} onClick={onVerify}>
         Verify weight
       </button>
     </div>
@@ -108,6 +113,10 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
   // through as a plain string end to end, per the Number(event_id)-on-a-uuid
   // bug already found elsewhere in this app.
   const { id } = use(params);
+  // Convenience-only: hides review actions without manage_registrations.
+  // Authorization stays server-side (review/attendance/verify RPC gates).
+  const { perms } = useOrganizerPermissions();
+  const canReview = canDo(perms, 'manage_registrations');
 
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [eventName, setEventName] = useState<string | null>(null);
@@ -117,6 +126,9 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
   const [exportingGroupKey, setExportingGroupKey] = useState<string | null>(null);
   const [showAllWeightGroups, setShowAllWeightGroups] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<Registration | null>(null);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overriding, setOverriding] = useState(false);
   const [weightVerificationTarget, setWeightVerificationTarget] = useState<Registration | null>(null);
   const [verifiedWeightText, setVerifiedWeightText] = useState('');
   const [weightCorrectionReason, setWeightCorrectionReason] = useState('');
@@ -168,7 +180,33 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
       showToast(status === 'approved' ? 'Registration approved' : 'Registration rejected');
       refresh();
     } else {
-      showToast(res.message || 'Update failed');
+      const msg = res.message || 'Update failed';
+      // Phase 6: ineligible/pending requires override with reason
+      if (status === 'approved' && /without override/i.test(msg)) {
+        const reg = registrations.find((r) => r.registration_id === registrationId) || null;
+        setOverrideTarget(reg);
+        setOverrideReason('');
+      }
+      showToast(msg);
+    }
+  }
+
+  async function handleOverride() {
+    if (!overrideTarget) return;
+    if (!overrideReason.trim()) {
+      showToast('Override reason is required');
+      return;
+    }
+    setOverriding(true);
+    const res = await organizerApi.reviewRegistration(overrideTarget.registration_id, 'overridden', overrideReason.trim());
+    setOverriding(false);
+    if (res.success) {
+      showToast('Registration overridden and approved');
+      setOverrideTarget(null);
+      setOverrideReason('');
+      refresh();
+    } else {
+      showToast(res.message || 'Override failed');
     }
   }
 
@@ -276,6 +314,9 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
             {registrations.length} total · {approvedCount} approved · {pendingCount} pending · {rejectedCount} rejected
           </p>
         )}
+        {!canReview && (
+          <p className="text-muted">Review actions are disabled for this account — ask an admin for manage_registrations.</p>
+        )}
       </div>
 
       {registrations.length === 0 ? (
@@ -373,6 +414,7 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
                         <Actions
                           r={r}
                           busy={busy}
+                          canReview={canReview}
                           onApprove={() => handleStatus(r.registration_id, 'approved')}
                           onReject={() => handleStatus(r.registration_id, 'rejected')}
                           onAttend={() => handleAttendance(r.registration_id)}
@@ -404,6 +446,7 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
                   <Actions
                     r={r}
                     busy={busy}
+                    canReview={canReview}
                     block
                     onApprove={() => handleStatus(r.registration_id, 'approved')}
                     onReject={() => handleStatus(r.registration_id, 'rejected')}
@@ -415,6 +458,32 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
             })}
           </div>
         </>
+      )}
+
+      {overrideTarget && (
+        <div className="override-backdrop" onClick={() => setOverrideTarget(null)}>
+          <div className="override-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Override eligibility</h3>
+            <p className="override-player">
+              {overrideTarget.player_name || 'Unknown'} — {categoryLabel(overrideTarget)}
+            </p>
+            <p className="override-note">This registration is ineligible or pending weight verification. Provide a reason to override and approve.</p>
+            <textarea
+              placeholder="Reason for override (required)"
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+              rows={3}
+            />
+            <div className="override-actions">
+              <button className="btn-reject" onClick={() => setOverrideTarget(null)} disabled={overriding}>
+                Cancel
+              </button>
+              <button className="btn-approve" onClick={handleOverride} disabled={overriding || !overrideReason.trim()}>
+                {overriding ? 'Overriding…' : 'Confirm override'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && <div className="toast">{toast}</div>}
@@ -934,6 +1003,57 @@ export default function OrganizerEventRegistrationsPage({ params }: { params: Pr
         .weight-dialog-actions button:disabled {
           cursor: default;
           opacity: 0.6;
+        }
+
+        .override-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 60;
+          padding: 16px;
+        }
+        .override-card {
+          background: var(--color-surface);
+          border-radius: 16px;
+          padding: 20px;
+          width: 100%;
+          max-width: 420px;
+          box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.3);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .override-card h3 {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 800;
+        }
+        .override-player {
+          font-size: 13px;
+          color: #3a3d45;
+          margin: 0;
+        }
+        .override-note {
+          font-size: 12px;
+          color: var(--color-muted);
+          margin: 0;
+        }
+        .override-card textarea {
+          width: 100%;
+          border: 1.5px solid var(--color-line);
+          border-radius: 10px;
+          padding: 10px;
+          font-family: inherit;
+          font-size: 13px;
+          resize: vertical;
+        }
+        .override-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
         }
 
         @media (max-width: 640px) {

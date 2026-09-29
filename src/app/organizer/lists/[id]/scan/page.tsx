@@ -10,6 +10,15 @@ interface ScannedEntry {
   timestamp: string;
   status: 'success' | 'duplicate' | 'error';
   message: string;
+  /** Phase 4 actor label ("Name (Admin)" / "Admin"), null for legacy rows. */
+  actor?: string | null;
+}
+
+/** Render the frozen actor stamp as "Name (Role)" or the bare role label. */
+function actorLabel(scannerName: string | null, role: string | null): string | null {
+  if (!role) return null;
+  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  return scannerName ? `${scannerName} (${roleLabel})` : roleLabel;
 }
 
 export default function ScanListPage({ params }: { params: Promise<{ id: string }> }) {
@@ -37,13 +46,14 @@ export default function ScanListPage({ params }: { params: Promise<{ id: string 
     organizerApi.getAttendanceListScans(listId).then((res) => {
       if (res.success && res.data) {
         setRecentScans(
-          res.data.map((s) => ({
-            key: `initial-${nextKey.current++}`,
-            name: s.player_name,
-            timestamp: new Date(s.scanned_at).toLocaleTimeString(),
-            status: 'success' as const,
-            message: 'Already recorded',
-          })),
+            res.data.map((s) => ({
+              key: `initial-${nextKey.current++}`,
+              name: s.player_name,
+              timestamp: new Date(s.scanned_at).toLocaleTimeString(),
+              status: 'success' as const,
+              message: 'Already recorded',
+              actor: actorLabel(s.scanner_name, s.scanned_by_role),
+            })),
         );
         setScanCount(res.data.length);
       }
@@ -109,11 +119,12 @@ export default function ScanListPage({ params }: { params: Promise<{ id: string 
         ) : (
           <div className="scan-list">
             {recentScans.map((s) => (
-              <div className={`scan-row ${s.status}`} key={s.key}>
-                <div>
-                  <span className="s-name">{s.name}</span>
-                  <span className="s-msg">{s.message}</span>
-                </div>
+                <div className={`scan-row ${s.status}`} key={s.key}>
+                  <div>
+                    <span className="s-name">{s.name}</span>
+                    <span className="s-msg">{s.message}</span>
+                    {s.actor && <span className="s-actor">· {s.actor}</span>}
+                  </div>
                 <span className="s-time">{s.timestamp}</span>
               </div>
             ))}
@@ -299,6 +310,11 @@ export default function ScanListPage({ params }: { params: Promise<{ id: string 
           font-size: 11.5px;
           color: var(--color-muted);
           margin-top: 1px;
+        }
+        .s-actor {
+          font-size: 11.5px;
+          color: var(--color-muted);
+          margin-left: 6px;
         }
         .s-time {
           flex-shrink: 0;

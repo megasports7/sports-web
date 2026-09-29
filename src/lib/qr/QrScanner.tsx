@@ -15,10 +15,10 @@
  * scanning for a large share of real users or require a second fallback
  * path, which is more complexity, not less.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import jsQR from 'jsqr';
 
-export type CameraState = 'requesting' | 'granted' | 'denied' | 'no-camera' | 'error';
+export type CameraState = 'requesting' | 'granted' | 'denied' | 'no-camera' | 'blocked' | 'error';
 
 interface QrScannerProps {
   /** Called once per newly-seen distinct QR value -- repeat frames of the
@@ -40,54 +40,186 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastValueRef = useRef<string | null>(null);
+  const firstFrameLoggedRef = useRef(false);
   const onScanRef = useRef(onScan);
   useEffect(() => {
     onScanRef.current = onScan;
   }, [onScan]);
 
   const [state, setState] = useState<CameraState>('requesting');
+  // Timestamped in-component debug log for camera issues: every state
+  // transition, getUserMedia outcome, track event, and decode milestone is
+  // recorded here (and mirrored to console.debug) so a screenshot of the
+  // collapsed panel below gives the full picture without DevTools digging.
+  // Capped to avoid unbounded growth; local only, nothing leaves the device.
+  const [logEntries, setLogEntries] = useState<string[]>([]);
+  const pushLog = (msg: string) => {
+    const stamp = new Date().toISOString().slice(11, 23);
+    const line = `[${stamp}] ${msg}`;
+    console.debug('[QrScanner]', line);
+    setLogEntries((prev) => [...prev.slice(-59), line]);
+  };
+
+  // State transitions go through here so every change is logged in the same
+  // place (and to keep setState calls out of effect bodies, which lint
+  // forbids) -- call go() instead of setState() for camera state below.
+  // Stable (useCallback) so effects can depend on it without re-running.
+  const go = useCallback((next: CameraState) => {
+    const stamp = new Date().toISOString().slice(11, 23);
+    const line = `[${stamp}] state -> ${next}`;
+    console.debug('[QrScanner]', line);
+    setLogEntries((prev) => [...prev.slice(-59), line]);
+    setState(next);
+  }, []);
+  // Raw failure reason for the diagnostics line in the 'error' UI below --
+  // without it we cannot tell "no mediaDevices API" apart from an exotic
+  // getUserMedia error name on a user's actual device.
+  const [failureDetail, setFailureDetail] = useState<string | null>(null);
+  // Bump to re-run the start effect below (the "Try again" path) without
+  // unmounting the component -- remounting would also work but loses the
+  // onScan closure wiring this component deliberately preserves.
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    let cleanupTrack: (() => void) | null = null;
+
+    function stopStream() {
+      cleanupTrack?.();
+      cleanupTrack = null;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
 
     async function start() {
+      pushLog('start: requesting camera');
       if (!navigator.mediaDevices?.getUserMedia) {
-        setState('error');
+        if (!cancelled) {
+          pushLog('start: mediaDevices/getUserMedia API absent');
+          setFailureDetail('mediaDevices/getUserMedia API absent');
+          go('error');
+        }
         return;
       }
+      let stream: MediaStream;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: 'environment' } },
           audio: false,
         });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        setState('granted');
       } catch (err) {
         if (cancelled) return;
         const name = (err as DOMException)?.name;
-        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') setState('denied');
-        else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') setState('no-camera');
-        else setState('error');
+        const msg = (err as Error)?.message;
+        pushLog(`getUserMedia threw ${name || 'unknown'}${msg ? `: ${msg}` : ''}`);
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') go('denied');
+        else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') go('no-camera');
+        // NotReadableError: permission was granted but the OS/driver would
+        // not hand over frames -- camera held by another app/tab, disabled
+        // in OS privacy settings, or a broken driver. OverconstrainedError:
+        // no device satisfies the request. Both are retryable device states,
+        // not a missing secure context, so they share the 'blocked' UI.
+        else if (name === 'NotReadableError' || name === 'OverconstrainedError') go('blocked');
+        else {
+          setFailureDetail(
+            `getUserMedia threw ${name || 'unknown'}${msg ? `: ${msg}` : ''}`,
+          );
+          go('error');
+        }
+        return;
       }
+      if (cancelled) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      streamRef.current = stream;
+      const tracks = stream.getVideoTracks();
+      pushLog(
+        `stream acquired: ${tracks.length} video track(s)` +
+          (tracks[0]
+            ? ` label="${tracks[0].label || 'unlabeled'}" muted=${String(tracks[0].muted)} state=${tracks[0].readyState}`
+            : ''),
+      );
+      const video = videoRef.current;
+      if (!video) {
+        go('error');
+        return;
+      }
+      // Autoplay-policy hardening: muted/playsInline as element PROPERTIES,
+      // not just JSX attributes (React does not reliably set the muted
+      // property, and an unmuted play() rejects outside a user gesture).
+      // play() itself waits for metadata so frames exist before 'granted'.
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      // A granted-but-silent track (camera held by another tab/app, OS-level
+      // block, virtual camera with no input) resolves getUserMedia yet
+      // renders eternal black. Surface it with an actionable message instead
+      // of leaving the user staring at a dark viewfinder.
+      const [track] = stream.getVideoTracks();
+      if (track) {
+        const onSilence = () => {
+          pushLog('track mute/ended: no frames flowing');
+          if (!cancelled) go('blocked');
+        };
+        const onFrames = () => {
+          pushLog('track unmute: frames flowing again');
+          if (!cancelled) go('granted');
+        };
+        track.addEventListener('mute', onSilence);
+        track.addEventListener('ended', onSilence);
+        track.addEventListener('unmute', onFrames);
+        cleanupTrack = () => {
+          track.removeEventListener('mute', onSilence);
+          track.removeEventListener('ended', onSilence);
+          track.removeEventListener('unmute', onFrames);
+        };
+        if (track.muted) {
+          go('blocked');
+          return;
+        }
+      }
+      try {
+        if (video.readyState < 1) {
+          pushLog('waiting for video metadata…');
+          await new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(() => reject(new Error('metadata timeout')), 10000);
+            video.onloadedmetadata = () => {
+              window.clearTimeout(timer);
+              resolve();
+            };
+          });
+          pushLog(`metadata ready: ${video.videoWidth}x${video.videoHeight}`);
+        }
+        await video.play();
+        pushLog('video.play() resolved');
+      } catch {
+        // Stream was acquired but never produced a picture (dead/virtual
+        // camera) or playback was refused: release the camera and show the
+        // retryable 'blocked' UI rather than the generic secure-context
+        // message, which does not describe this situation.
+        pushLog('play/metadata failed after stream acquired');
+        if (!cancelled) {
+          stopStream();
+          go('blocked');
+        }
+        return;
+      }
+      if (cancelled) return;
+      go('granted');
     }
 
     start();
 
     return () => {
       cancelled = true;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+      stopStream();
     };
-  }, []);
+  }, [retryKey, go]);
 
   useEffect(() => {
     if (state !== 'granted') return;
@@ -98,7 +230,13 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
     if (!ctx) return;
 
     function tick() {
-      if (active && video!.readyState === video!.HAVE_ENOUGH_DATA) {
+      // videoWidth is 0 until the first frame arrives -- dividing by it
+      // would poison the canvas size and kill this loop, so wait it out.
+      if (active && video!.readyState === video!.HAVE_ENOUGH_DATA && video!.videoWidth > 0) {
+        if (!firstFrameLoggedRef.current) {
+          firstFrameLoggedRef.current = true;
+          pushLog(`first frame: ${video!.videoWidth}x${video!.videoHeight}, decoding…`);
+        }
         // Downscaled decode target -- full camera resolution is unnecessary
         // for a QR code held reasonably close and wastes CPU/battery.
         const targetWidth = 480;
@@ -111,6 +249,7 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
         if (code?.data) {
           if (code.data !== lastValueRef.current) {
             lastValueRef.current = code.data;
+            pushLog(`QR decoded (${code.data.length} chars, starts ${code.data.slice(0, 12)}…)`);
             onScanRef.current(code.data);
           }
         } else {
@@ -126,34 +265,91 @@ export function QrScanner({ onScan, active = true, className }: QrScannerProps) 
     };
   }, [state, active]);
 
+  // Render contract (the actual black-screen root cause lives here, so read
+  // carefully): the <video> element MUST stay mounted in every state, hidden
+  // until granted. start() attaches the stream to videoRef on mount, but the
+  // previous code only mounted <video> after 'granted' -- so the ref was
+  // always null on the first pass: the old code skipped the attach yet set
+  // 'granted' anyway (eternal black viewfinder), and the null-guard turns
+  // that same situation into an instant error instead. Never gate the
+  // video element's existence on the state that requires it to exist.
+  // Messages render in a twin wrapper so page CSS keeps working unchanged.
+  const granted = state === 'granted';
+  let message: ReactNode = null;
   if (state === 'requesting') {
-    return <p className={className ?? 'text-sm text-gray-500'}>Requesting camera access…</p>;
-  }
-  if (state === 'denied') {
-    return (
-      <p className={className ?? 'text-sm text-red-600'}>
+    message = <p>Requesting camera access…</p>;
+  } else if (state === 'denied') {
+    message = (
+      <p className="text-sm text-red-600">
         Camera access denied. Your browser usually will not re-prompt automatically — check the
         camera permission for this site in your browser&apos;s address-bar / site-settings icon, then
         reload this page.
       </p>
     );
-  }
-  if (state === 'no-camera') {
-    return <p className={className ?? 'text-sm text-red-600'}>No camera was found on this device.</p>;
-  }
-  if (state === 'error') {
-    return (
-      <p className={className ?? 'text-sm text-red-600'}>
+  } else if (state === 'no-camera') {
+    message = <p className="text-sm text-red-600">No camera was found on this device.</p>;
+  } else if (state === 'blocked') {
+    message = (
+      <div>
+        <p className="text-sm font-semibold text-amber-700">
+          The camera opened but is not sending any picture — it may be in use
+          by another tab or app, blocked by the OS, or a virtual camera with
+          no input.
+        </p>
+        <button
+          type="button"
+          className="mt-2 rounded-lg bg-black px-3 py-2 text-sm font-medium text-white"
+          onClick={() => {
+            go('requesting');
+            setRetryKey((k) => k + 1);
+          }}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  } else if (state === 'error') {
+    // Live environment facts, not guesses: protocol/secure-context and API
+    // presence are evaluated in the user's own browser at render time, so a
+    // screenshot of this message tells us exactly which precondition failed.
+    const secure =
+      typeof window !== 'undefined'
+        ? `protocol=${window.location.protocol} secure=${String(window.isSecureContext)} mediaDevices=${String(
+            !!navigator.mediaDevices,
+          )} getUserMedia=${String(!!navigator.mediaDevices?.getUserMedia)}`
+        : 'environment unknown';
+    message = (
+      <p className="text-sm text-red-600">
         Could not access the camera. This requires a secure (HTTPS) connection and a browser that
         supports camera access.
+        <br />
+        <span className="text-xs opacity-80">
+          Diagnostics: {secure}
+          {failureDetail ? ` (${failureDetail})` : ''}
+        </span>
       </p>
     );
   }
 
   return (
-    <div className={className}>
-      <video ref={videoRef} className="w-full rounded-lg bg-black" playsInline muted />
-      <canvas ref={canvasRef} className="hidden" />
-    </div>
+    <>
+      <div className={className} style={granted ? undefined : { display: 'none' }}>
+        <video ref={videoRef} className="w-full rounded-lg bg-black" playsInline muted autoPlay />
+        <canvas ref={canvasRef} className="hidden" />
+      </div>
+      {!granted && <div className={className}>{message}</div>}
+      {/* Debug-log panel: absolutely positioned ABOVE the video wrapper with
+          a real z-index. The previous in-flow version painted underneath the
+          absolutely-positioned wrapper (which covers the whole frame), so it
+          looked like a static tag and never received clicks. */}
+      <details className="absolute inset-x-0 bottom-0 z-30 max-h-[70%] overflow-y-auto border-t border-gray-200 bg-white/95 px-3 py-2 text-left">
+        <summary className="cursor-pointer text-xs font-semibold text-gray-600">
+          Camera debug log ({logEntries.length})
+        </summary>
+        <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed text-gray-700">
+          {logEntries.length ? logEntries.join('\n') : 'No events yet.'}
+        </pre>
+      </details>
+    </>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { playerApi } from '@/lib/api/player.api';
+import { downloadCertificateImage } from '@/lib/certificateDownload';
 import type { Certificate } from '@/lib/types';
 
 type Level = 'gold' | 'silver' | 'bronze' | 'participation';
@@ -80,6 +81,14 @@ function ShareIcon() {
     </svg>
   );
 }
+function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none">
+      <path d="M10 3v9.5M6.5 9.5 10 13l3.5-3.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 15.5h12" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+    </svg>
+  );
+}
 const LEVEL_ICON: Record<Level, () => React.ReactElement> = {
   gold: CupIcon,
   silver: MedalIcon,
@@ -93,6 +102,8 @@ export default function PlayerCertificatesPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [playerName, setPlayerName] = useState('Player');
+  const [playerPhoto, setPlayerPhoto] = useState<string | null>(null);
 
   useEffect(() => {
     playerApi
@@ -101,6 +112,14 @@ export default function PlayerCertificatesPage() {
         if (res.success && res.data) setCerts(res.data);
       })
       .finally(() => setLoading(false));
+    // Display name/photo for the rendered certificate card (mirrors mobile,
+    // which overlays the profile name + photo onto the template).
+    playerApi.profile().then((res) => {
+      if (res.success && res.data) {
+        if (res.data.player_name) setPlayerName(res.data.player_name);
+        if (res.data.photo) setPlayerPhoto(res.data.photo);
+      }
+    });
   }, []);
 
   function showToast(msg: string) {
@@ -128,6 +147,33 @@ export default function PlayerCertificatesPage() {
       window.open(res.data.url, '_blank', 'noopener,noreferrer');
     } else {
       showToast(res.message || 'Could not open certificate');
+    }
+  }
+
+  // Local render + JPEG download, ported from mobile's viewer-modal capture
+  // (PlayerCertificates.tsx captureCertificateImage) — no Edge Function
+  // involved, so this works even where cert-view's browser link cannot.
+  async function handleDownload(cert: Certificate) {
+    if (!cert.certificate_id) return;
+    setBusyId(cert.certificate_id);
+    try {
+      const row = cert as unknown as Record<string, unknown>;
+      const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null);
+      await downloadCertificateImage({
+        level: cert.level || cert.certificate_type,
+        playerName: str(row.player_name) || playerName,
+        eventName: cert.event_name || 'Event',
+        signName: str(row.sign_name),
+        signDesignation: str(row.sign_designation),
+        sign2Name: str(row.sign2_name),
+        sign2Designation: str(row.sign2_designation),
+        photoUrl: playerPhoto,
+      });
+      showToast('Certificate downloaded');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not download certificate');
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -219,6 +265,10 @@ export default function PlayerCertificatesPage() {
                       <button className="btn-share" disabled={busy} onClick={() => handleShare(c)}>
                         <ShareIcon />
                         Share
+                      </button>
+                      <button className="btn-download" disabled={busy} onClick={() => handleDownload(c)}>
+                        <DownloadIcon />
+                        {busy ? 'Working…' : 'Download'}
                       </button>
                     </div>
                   </div>
@@ -474,6 +524,14 @@ export default function PlayerCertificatesPage() {
         }
         .btn-share:hover:not(:disabled) {
           border-color: #c9c6bf;
+        }
+        .btn-download {
+          border: none;
+          background: color-mix(in srgb, var(--color-accent-green) 12%, transparent);
+          color: #0a8a3f;
+        }
+        .btn-download:hover:not(:disabled) {
+          background: color-mix(in srgb, var(--color-accent-green) 20%, transparent);
         }
 
         .empty {

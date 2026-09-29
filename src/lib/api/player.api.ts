@@ -18,6 +18,8 @@ import type {
   Match,
   Certificate,
   Registration,
+  GeoState,
+  GeoDistrict,
 } from '../types';
 
 function toApiResponse<T>(result: { data: T | null; error: unknown }): ApiResponse<T> {
@@ -74,12 +76,33 @@ function sanitizeProfileUpdate(data: Partial<Player>): Record<string, unknown> {
     'gender',
     'father_name',
     'declared_weight_kg',
+    'nsrd_id',
   ];
   for (const key of passthrough) {
     if (src[key] !== undefined) out[key] = src[key];
   }
   if (src.player_name !== undefined) out.name = src.player_name;
   return out;
+}
+
+async function callRegisterForEventV2(
+  supabase: ReturnType<typeof createClient>,
+  params: { event_id: string; event_category_id: string },
+): Promise<ApiResponse<Registration>> {
+  const { data, error } = await supabase.rpc('register_for_event_v2', {
+    p_event_id: params.event_id,
+    p_event_category_id: params.event_category_id,
+  });
+  if (error) return toApiResponse<Registration>({ data: null, error });
+  const result = data as { registration_id: string; eligibility_status: string } | null;
+  return toApiResponse({
+    data: {
+      registration_id: result?.registration_id as string,
+      event_id: params.event_id,
+      status: 'pending' as const,
+    } as Registration,
+    error: null,
+  });
 }
 
 async function callRegisterForEvent(
@@ -117,6 +140,30 @@ async function callRegisterForEvent(
 }
 
 export const playerApi = {
+  /** Canonical master data for State -> District dropdowns (Step 7).
+   *  states/districts are authenticated-readable reference data. */
+  geoStates(): Promise<ApiResponse<GeoState[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from('states').select('id, name, code').order('name');
+      if (error) return toApiResponse<GeoState[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoState[], error: null });
+    })();
+  },
+
+  geoDistricts(stateId: string): Promise<ApiResponse<GeoDistrict[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('districts')
+        .select('id, state_id, name, code')
+        .eq('state_id', stateId)
+        .order('name');
+      if (error) return toApiResponse<GeoDistrict[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoDistrict[], error: null });
+    })();
+  },
+
   dashboard(): Promise<ApiResponse<PlayerDashboardData>> {
     return (async () => {
       const supabase = createClient();
@@ -240,6 +287,38 @@ export const playerApi = {
     })();
   },
 
+  /** Save the player's own Aadhaar into the restricted player_sensitive_ids
+   *  table (self + admin read, player-only write -- never part of profiles).
+   *  Mirrors mobile AuthContext's post-signup upsert: best-effort by
+   *  contract, so failures return (not throw) and callers decide whether to
+   *  block -- signup itself must never fail because of this write. */
+  saveSensitiveIds(aadhaar: string): Promise<ApiResponse<void>> {
+    return (async () => {
+      try {
+        const supabase = createClient();
+        const uid = await getUid(supabase);
+        const { error } = await supabase
+          .from('player_sensitive_ids')
+          .upsert({ player_id: uid, aadhaar }, { onConflict: 'player_id' });
+        return toApiResponse<void>({ data: undefined, error });
+      } catch (err) {
+        return {
+          success: false,
+          message: err instanceof Error ? err.message : 'Could not save ID',
+        };
+      }
+    })();
+  },
+
+  // Demo only (worktree QA): self-verify weight by copying declared → verified
+  demoVerifyWeight(): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('demo_verify_own_weight');
+      return toApiResponse<void>({ data: undefined, error });
+    })();
+  },
+
   /** Web-native: a real File, no FormData/base64 workaround. Path convention
    *  (`${uid}/photo.<ext>`) matches profile_photos_insert_own's RLS check
    *  (first path segment must be the caller's own uid) exactly as mobile. */
@@ -311,6 +390,10 @@ export const playerApi = {
     seni_category?: string;
   }): Promise<ApiResponse<Registration>> {
     return callRegisterForEvent(createClient(), data);
+  },
+
+  registerForEventV2(eventId: string, categoryId: string): Promise<ApiResponse<Registration>> {
+    return callRegisterForEventV2(createClient(), { event_id: eventId, event_category_id: categoryId });
   },
 
   /** A real, previously-invisible gap found while wiring this page's redesign,

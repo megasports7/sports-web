@@ -15,6 +15,7 @@ import React, { createContext, useContext, useEffect, useMemo, useReducer, useRe
 import { useRouter } from 'next/navigation';
 import { createClient } from '../supabase/client';
 import { authApi } from '../api/auth.api';
+import { readLastActivity, startIdleWatcher, IDLE_LIMIT_MS, touchActivity } from './inactivity';
 import type { User, UserRole } from '../types';
 
 interface AuthState {
@@ -80,6 +81,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      // A tab reopened after a long-closed session must not resume it:
+      // idle longer than the limit (e.g. closed overnight) signs out
+      // instead of hydrating. Fresh logins touch() below, so they pass.
+      if (data.session && Date.now() - readLastActivity() >= IDLE_LIMIT_MS) {
+        supabase.auth.signOut();
+        if (mounted) dispatch({ type: 'SIGN_OUT' });
+        return;
+      }
       if (mounted) hydrate(!!data.session);
     });
 
@@ -93,6 +103,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       listener.subscription.unsubscribe();
     };
   }, [supabase]);
+
+  // 20-minute inactivity auto-logout, shared across tabs via the
+  // localStorage timestamp (activity anywhere keeps every tab alive).
+  useEffect(() => {
+    return startIdleWatcher(() => {
+      supabase.auth.signOut();
+      dispatch({ type: 'SIGN_OUT' });
+      router.push('/login');
+    });
+  }, [supabase, router]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -120,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           dispatch({ type: 'SIGN_IN', user: meRes.data });
+          touchActivity(true);
         } catch (err) {
           dispatch({ type: 'SET_LOADING', isLoading: false });
           throw err instanceof Error ? err : new Error('Login failed');
@@ -127,7 +148,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           manualFlowRef.current = false;
         }
       },
-
       signUp: async ({ name, email, password, role }) => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
         manualFlowRef.current = true;

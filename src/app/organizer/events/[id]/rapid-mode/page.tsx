@@ -3,6 +3,8 @@
 import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import { QrScanner } from '@/lib/qr/QrScanner';
 import {
   TANDING_AGE_CATEGORIES,
@@ -23,6 +25,11 @@ interface ScannedPlayer {
 export default function RapidModePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
   const router = useRouter();
+  // Phase 4: preserve admin-in-organizer ?org= when returning to batches.
+  const orgParam = useOrgParam();
+  // Convenience-only: create_batch_with_bracket authorizes server-side.
+  const { perms } = useOrganizerPermissions();
+  const canManageBatches = canDo(perms, 'manage_batches');
 
   const [eventName, setEventName] = useState<string | null>(null);
 
@@ -167,7 +174,7 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
     });
     setCreating(false);
     if (res.success) {
-      router.push(`/organizer/events/${eventId}/batches`);
+      router.push(withOrg(`/organizer/events/${eventId}/batches`, orgParam));
     } else {
       setError(res.message || 'Could not create batch');
     }
@@ -339,7 +346,10 @@ export default function RapidModePage({ params }: { params: Promise<{ id: string
           <input value={batchName} onChange={(e) => setBatchName(e.target.value)} placeholder={categoryLabel() || 'Custom Batch'} />
         </div>
         {error && <p className="text-corner-red">{error}</p>}
-        <button className="btn-primary" onClick={handleCreateBatch} disabled={creating || activeCount < 2}>
+        {!canManageBatches && (
+          <p className="text-corner-red">Batch creation is disabled for this account — ask an admin for manage_batches.</p>
+        )}
+        <button className="btn-primary" onClick={handleCreateBatch} disabled={creating || activeCount < 2 || !canManageBatches} title={canManageBatches ? undefined : 'Needs the manage_batches permission — ask an admin.'}>
           {creating ? 'Creating…' : `Create batch & go to manage (${activeCount} players)`}
         </button>
       </div>

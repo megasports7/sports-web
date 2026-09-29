@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
 import type { Event } from '@/lib/types';
 
 function CalendarIcon() {
@@ -49,8 +51,35 @@ function ScanIcon() {
     </svg>
   );
 }
+function CategoryIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M3.5 4.5h7l6 6-6 6-7-7v-5Z" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />
+      <circle cx="7" cy="8" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="2.4" stroke="currentColor" strokeWidth={1.5} />
+      <path
+        d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M5 5l1.4 1.4M13.6 13.6 15 15M15 5l-1.4 1.4M6.4 13.6 5 15"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 export default function OrganizerEventsPage() {
+  // Phase 4: preserve admin-in-organizer ?org= across drill-down links.
+  const orgParam = useOrgParam();
+  // Convenience-only: hides the create entry points without manage_events.
+  // Authorization stays server-side (events_insert_organizer + RPC gates).
+  const { perms } = useOrganizerPermissions();
+  const canCreateEvents = canDo(perms, 'manage_events');
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,11 +104,21 @@ export default function OrganizerEventsPage() {
           <h1>Events</h1>
           <p>Manage registrations and attendance scanning for each event.</p>
         </div>
-        <Link href="/organizer/events/new" className="create-cta">
-          <PlusIcon />
-          Create event
-        </Link>
+        {canCreateEvents ? (
+          <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
+            <PlusIcon />
+            Create event
+          </Link>
+        ) : (
+          <span className="create-cta" aria-disabled="true" title="Needs the manage_events permission — ask an admin.">
+            <PlusIcon />
+            Create event
+          </span>
+        )}
       </div>
+      {!canCreateEvents && (
+        <p className="perm-note">Event creation is disabled for this account — ask an admin for manage_events.</p>
+      )}
 
       {events.length === 0 ? (
         <div className="empty">
@@ -87,17 +126,23 @@ export default function OrganizerEventsPage() {
             <CalendarIcon />
           </div>
           <h2>No events yet</h2>
-          <p>Create your first event to start taking registrations.</p>
-          <Link href="/organizer/events/new" className="create-cta">
-            <PlusIcon />
-            Create event
-          </Link>
+          <p>
+            {canCreateEvents
+              ? 'Create your first event to start taking registrations.'
+              : 'No events yet. An admin can grant this account event creation.'}
+          </p>
+          {canCreateEvents && (
+            <Link href={withOrg('/organizer/events/new', orgParam)} className="create-cta">
+              <PlusIcon />
+              Create event
+            </Link>
+          )}
         </div>
       ) : (
         <div className="events-list">
           {events.map((e) => (
             <div className="event-card" key={e.event_id}>
-              <Link href={`/organizer/events/${e.event_id}/registrations`} className="event-main">
+              <Link href={withOrg(`/organizer/events/${e.event_id}/registrations`, orgParam)} className="event-main">
                 {e.event_date && (
                   <span className="date-badge">
                     <span className="mon">{new Date(e.event_date).toLocaleDateString(undefined, { month: 'short' })}</span>
@@ -118,13 +163,21 @@ export default function OrganizerEventsPage() {
               </Link>
 
               <div className="event-actions">
-                <Link href={`/organizer/events/${e.event_id}/batches`} className="chip">
+                <Link href={withOrg(`/organizer/events/${e.event_id}/batches`, orgParam)} className="chip">
                   <BatchIcon />
                   Batches
                 </Link>
-                <Link href={`/organizer/events/${e.event_id}/scan-attendance`} className="chip">
+                <Link href={withOrg(`/organizer/events/${e.event_id}/scan-attendance`, orgParam)} className="chip">
                   <ScanIcon />
                   Scan attendance
+                </Link>
+                <Link href={withOrg(`/organizer/events/${e.event_id}/categories`, orgParam)} className="chip">
+                  <CategoryIcon />
+                  Configure categories
+                </Link>
+                <Link href={withOrg(`/organizer/events/${e.event_id}/settings`, orgParam)} className="chip">
+                  <SettingsIcon />
+                  Settings
                 </Link>
               </div>
             </div>
@@ -177,6 +230,15 @@ export default function OrganizerEventsPage() {
         :global(.create-cta svg) {
           width: 17px;
           height: 17px;
+        }
+        :global(.create-cta[aria-disabled='true']) {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .perm-note {
+          margin: 0;
+          font-size: 13.5px;
+          color: var(--color-muted);
         }
 
         .events-list {

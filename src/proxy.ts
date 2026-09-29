@@ -71,12 +71,19 @@ export async function proxy(request: NextRequest) {
   // A lookup table, not a growing chain of if-blocks -- adding referee here
   // (and admin/associate later) is one line, not a new hand-copied branch
   // that has to remember to redirect every *other* existing role away too.
+  //
+  // Secretary paths are hyphenated (see ROLE_PATH in roleUi) while role names
+  // use underscores -- the gate below matches on URL path prefixes, so PATHS
+  // (not role names) is what the loop iterates. A role whose home is missing
+  // here falls through to /login (fail-closed default preserved).
   const ROLE_HOME: Record<string, string> = {
     player: '/player',
     organizer: '/organizer',
     referee: '/referee',
     admin: '/admin',
     associate: '/associate',
+    district_secretary: '/district-secretary',
+    state_secretary: '/state-secretary',
   };
   const homeFor = (r: string | undefined) => (r && ROLE_HOME[r]) || '/login';
 
@@ -86,8 +93,22 @@ export async function proxy(request: NextRequest) {
     url.pathname = homeFor(role);
     return NextResponse.redirect(url);
   }
-  for (const roleName of Object.keys(ROLE_HOME)) {
-    if (pathname.startsWith(`/${roleName}`) && role !== roleName) {
+  // Phase 4 (admin-in-organizer-context): an admin may enter /organizer/*
+  // ONLY with an explicit ?org=<uuid> context parameter. The param is
+  // navigation/context only -- it grants nothing by itself (RLS + RPC
+  // ownership checks authorize every read/write from the object's own
+  // owner chain + jwt_role). Without the param, admins bounce to /admin
+  // exactly as before (fail-closed default preserved).
+  const ORG_CONTEXT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const orgParam = request.nextUrl.searchParams.get('org');
+  const adminInOrgContext =
+    role === 'admin' &&
+    pathname.startsWith('/organizer') &&
+    orgParam !== null &&
+    ORG_CONTEXT_RE.test(orgParam);
+  for (const home of Object.values(ROLE_HOME)) {
+    if ((pathname === home || pathname.startsWith(`${home}/`)) && homeFor(role) !== home) {
+      if (adminInOrgContext) continue;
       const url = request.nextUrl.clone();
       url.pathname = homeFor(role);
       return NextResponse.redirect(url);

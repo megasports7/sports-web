@@ -11,6 +11,7 @@ import {
   SIMPLE_WEIGHT_AGES,
   SENI_CATEGORIES,
 } from '@/lib/player/registrationCategories';
+import type { ConfiguredEventCategory } from '@/lib/types';
 
 interface EventSummary {
   event_name?: string;
@@ -18,6 +19,9 @@ interface EventSummary {
   location?: string;
   organizer_name?: string;
   event_date?: string;
+  registration_rules_version?: number;
+  registration_v2_write_state?: string;
+  eligibility_time_zone?: string | null;
 }
 
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -125,6 +129,12 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Phase 4 dual-mode: v2 events load published categories + eligibility preview
+  const [publishedCategories, setPublishedCategories] = useState<ConfiguredEventCategory[]>([]);
+  const [selectedV2Id, setSelectedV2Id] = useState('');
+  const [preview, setPreview] = useState<{ eligible: boolean; status: string; reasons: string[] } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   useEffect(() => {
     const supabase = createClient();
     supabase
@@ -132,8 +142,49 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
       .select('*')
       .eq('id', id)
       .maybeSingle()
-      .then(({ data }) => setEvent(data));
+      .then(({ data }) => setEvent(data as EventSummary | null));
   }, [id]);
+
+  const isV2 = event?.registration_rules_version === 2;
+
+  useEffect(() => {
+    if (!isV2 || !id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when v2 deactivates
+      setPublishedCategories([]);
+      setSelectedV2Id('');
+      setPreview(null);
+      return;
+    }
+    const supabase = createClient();
+    supabase
+      .from('event_categories')
+      .select('*')
+      .eq('event_id', id)
+      .eq('is_published', true)
+      .order('competition_type')
+      .order('age_label')
+      .order('code')
+      .then(({ data }) => setPublishedCategories((data as ConfiguredEventCategory[]) ?? []));
+  }, [isV2, id]);
+
+  async function selectV2Category(categoryId: string) {
+    setSelectedV2Id(categoryId);
+    setPreview(null);
+    if (!categoryId) return;
+    setPreviewLoading(true);
+    const supabase = createClient();
+    const { data, error: rpcError } = await supabase.rpc('check_registration_eligibility', {
+      p_event_id: id,
+      p_event_category_id: categoryId,
+    });
+    setPreviewLoading(false);
+    if (rpcError) {
+      setPreview({ eligible: false, status: 'ineligible', reasons: [rpcError.message] });
+    } else {
+      const r = data as { eligible: boolean; status: string; reasons: string[] };
+      setPreview(r);
+    }
+  }
 
   const ageOptions = eventCategory === 'TANDING' ? TANDING_AGE_CATEGORIES : SENI_AGE_CATEGORIES;
   const isSimpleWeight = eventCategory === 'TANDING' && SIMPLE_WEIGHT_AGES.includes(ageCategory);
@@ -169,19 +220,33 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
 
   async function handleConfirm() {
     setError(null);
-    // Belt-and-suspenders: the stepper's own gating already prevents reaching
-    // review without a category, but this keeps the API call correctly typed
-    // and safe even if that ever changes.
+    // Phase 5 v2 path: configured categories use the audited RPC with snapshots
+    if (isV2) {
+      if (!selectedV2Id) {
+        setError('Please select a category');
+        return;
+      }
+      if (preview && preview.status === 'ineligible') {
+        setError(`Ineligible: ${preview.reasons.join(', ')}`);
+        return;
+      }
+      setSubmitting(true);
+      const res = await playerApi.registerForEventV2(id, selectedV2Id);
+      setSubmitting(false);
+      if (res.success) {
+        setStep(5);
+      } else {
+        setError(res.message || 'Registration failed');
+      }
+      return;
+    }
+    // Legacy v1 path
     if (!eventCategory) {
       setError('Please select an event category');
       return;
     }
     setSubmitting(true);
     const res = await playerApi.registerForEventWithCategory({
-      // id is the event's real uuid (the URL path param) -- NOT a number.
-      // Number(id) here would silently send NaN to the register_for_event
-      // RPC; caught during the Phase 3 organizer discovery pass, which
-      // flagged this exact number/uuid type mismatch as a live-bug pattern.
       event_id: id,
       event_category: eventCategory,
       age_category: ageCategory,
@@ -198,6 +263,8 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
 
   function registerAnother() {
     pickCategory('');
+    setSelectedV2Id('');
+    setPreview(null);
     setError(null);
     setStep(1);
   }
@@ -228,7 +295,69 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         <span className="open-pill">Open</span>
       </div>
 
-      {step <= 4 && (
+      {isV2 && (
+        <section className="step">
+          <p className="step-label">Configured categories</p>
+          <h2>Select your category</h2>
+          <p className="step-note">This event uses configured categories. Eligibility is checked live — submission still uses legacy until Phase 5.</p>
+          {publishedCategories.length === 0 ? (
+            <p className="step-note">No published categories yet. Please check back after organizer publishes.</p>
+          ) : (
+            <div className="choice-grid age-grid">
+              {publishedCategories.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`choice-card ${selectedV2Id === c.id ? 'selected' : ''}`}
+                  onClick={() => selectV2Category(c.id)}
+                >
+                  <span className="age-text">
+                    <span className="choice-title">{c.code}</span>
+                    <span className="choice-desc">
+                      {c.competition_type} · {c.age_label} {c.maximum_age ? `(${c.minimum_age}-${c.maximum_age})` : `(${c.minimum_age}+)`} · {c.gender}{' '}
+                      {c.weight_label ? `· ${c.weight_label}` : c.seni_category ? `· ${c.seni_category}` : ''}
+                    </span>
+                  </span>
+                  <span className="choice-check"><CheckIcon /></span>
+                </button>
+              ))}
+            </div>
+          )}
+          {selectedV2Id && (
+            <div className="review-card" style={{ marginTop: 16 }}>
+              {previewLoading ? (
+                <p className="step-note">Checking eligibility…</p>
+              ) : preview ? (
+                <>
+                  <div className="review-row">
+                    <span className="review-label">Eligibility</span>
+                    <span className="review-value">{preview.status} {preview.eligible ? '✓' : '✗'}</span>
+                  </div>
+                  {preview.reasons.length > 0 && (
+                    <div className="review-row">
+                      <span className="review-label">Reasons</span>
+                      <span className="review-value">{preview.reasons.join(', ')}</span>
+                    </div>
+                  )}
+                  <p className="step-note" style={{ marginTop: 8 }}>
+                    {preview.status === 'eligible' ? 'You are eligible — you can confirm.' : preview.status === 'pending_weight_verification' ? 'Pending organizer weight verification — you can still register, approval will wait.' : 'Fix the reasons above before registering.'}
+                  </p>
+                </>
+              ) : null}
+            </div>
+          )}
+          {selectedV2Id && (
+            <>
+              {error && <p className="form-error">{error}</p>}
+              <button type="button" className="btn-continue" disabled={submitting || previewLoading} onClick={handleConfirm} style={{ marginTop: 12, width: '100%' }}>
+                {submitting ? 'Registering…' : 'Confirm registration'}
+              </button>
+            </>
+          )}
+        </section>
+      )}
+
+      {!isV2 && step <= 4 && (
         <div className="progress">
           <div className="progress-line-wrap">
             <div className="progress-line-track" />
@@ -247,7 +376,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </div>
       )}
 
-      {step === 1 && (
+      {!isV2 && step === 1 && (
         <section className="step">
           <p className="step-label">Category</p>
           <h2>Which category are you entering?</h2>
@@ -269,7 +398,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </section>
       )}
 
-      {step === 2 && (
+      {!isV2 && step === 2 && (
         <section className="step">
           <p className="step-label">Age group</p>
           <h2>What&apos;s your age category?</h2>
@@ -288,7 +417,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </section>
       )}
 
-      {step === 3 && eventCategory === 'TANDING' && isSimpleWeight && (
+      {!isV2 && step === 3 && eventCategory === 'TANDING' && isSimpleWeight && (
         <section className="step">
           <p className="step-label">Weight</p>
           <h2>What&apos;s your weight?</h2>
@@ -300,7 +429,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </section>
       )}
 
-      {step === 3 && eventCategory === 'TANDING' && !isSimpleWeight && (
+      {!isV2 && step === 3 && eventCategory === 'TANDING' && !isSimpleWeight && (
         <section className="step">
           <p className="step-label">Weight class</p>
           <h2>What&apos;s your weight class?</h2>
@@ -316,7 +445,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </section>
       )}
 
-      {step === 3 && eventCategory === 'SENI' && (
+      {!isV2 && step === 3 && eventCategory === 'SENI' && (
         <section className="step">
           <p className="step-label">Style</p>
           <h2>Which performance category?</h2>
@@ -335,7 +464,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </section>
       )}
 
-      {step === 4 && (
+      {!isV2 && step === 4 && (
         <section className="step">
           <p className="step-label">Review</p>
           <h2>Confirm your registration</h2>
@@ -373,7 +502,12 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
           <h2>You&apos;re in.</h2>
           <p>
             You&apos;re registered for {event?.event_name} —{' '}
-            {eventCategory === 'TANDING' ? `TANDING · ${ageCategory} · ${weightDisplay()}` : `SENI · ${ageCategory} · ${seniDisplay()}`}.
+            {isV2
+              ? publishedCategories.find((c) => c.id === selectedV2Id)?.code || selectedV2Id
+              : eventCategory === 'TANDING'
+                ? `TANDING · ${ageCategory} · ${weightDisplay()}`
+                : `SENI · ${ageCategory} · ${seniDisplay()}`}
+            .
           </p>
           <span className="status-pill">Pending organizer approval</span>
           <div>
@@ -383,7 +517,7 @@ export default function EventRegistrationPage({ params }: { params: Promise<{ id
         </section>
       )}
 
-      {step <= 4 && (
+      {!isV2 && step <= 4 && (
         <div className="footer-nav">
           {step > 1 && (
             <button type="button" className="btn-back" onClick={() => setStep((s) => (s - 1) as Step)}>

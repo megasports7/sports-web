@@ -34,8 +34,14 @@ import type {
   BatchPlayer,
   Referee,
   OrganizerMatch,
+  OrganizerPermission,
+  StandingRow,
   FilteredPlayer,
   AttendanceList,
+  ConfiguredEventCategory,
+  ConfiguredEventCategoryInput,
+  GeoState,
+  GeoDistrict,
 } from '../types';
 
 function toApiResponse<T>(result: { data: T | null; error: unknown }): ApiResponse<T> {
@@ -55,6 +61,27 @@ async function getUid(supabase: ReturnType<typeof createClient>): Promise<string
   const uid = data.session?.user?.id;
   if (!uid) throw new Error('Not signed in');
   return uid;
+}
+
+/**
+ * Phase 4 (admin-in-organizer-context): optional read/operation scoping
+ * override. Set ONLY by OrgContextHost (organizer layout) when the signed-in
+ * user is an admin carrying a valid ?org=<organizer-uuid>. Scoping-only:
+ * every authorization decision still happens in RLS + RPC ownership checks
+ * from the object's own owner chain, and every who-did-it column is stamped
+ * server-side from auth.uid(). Self-identity functions (profile,
+ * updateProfile, uploadPhoto) deliberately keep using getUid() so an admin
+ * can never clobber the organizer's own profile through this override.
+ */
+let orgContextUid: string | null = null;
+
+export function setOrgContextUid(uid: string | null) {
+  orgContextUid = uid;
+}
+
+async function getScopedUid(supabase: ReturnType<typeof createClient>): Promise<string> {
+  if (orgContextUid) return orgContextUid;
+  return getUid(supabase);
 }
 
 function mapOrganizerRow(row: Record<string, unknown> | null): Organizer | null {
@@ -218,7 +245,7 @@ export const organizerApi = {
   dashboard(): Promise<ApiResponse<OrganizerDashboardData>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
 
       const [profileRes, eventsCountRes, batchesCountRes, registrationsCountRes, pendingRegistrationsRes, recentEventsRes, allEventsRes] =
         await Promise.all([
@@ -371,7 +398,7 @@ export const organizerApi = {
   events(): Promise<ApiResponse<Event[]>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
       const { data, error } = await supabase
         .from('events')
         .select('*')
@@ -403,10 +430,159 @@ export const organizerApi = {
   event(eventId: string): Promise<ApiResponse<Event>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
       const { data, error } = await supabase.from('events').select('*').eq('id', eventId).eq('organizer_id', uid).maybeSingle();
       if (error || !data) return toApiResponse<Event>({ data: null, error: error ?? { message: 'Event not found' } });
       return toApiResponse({ data: mapEventRow(data), error: null });
+    })();
+  },
+
+  /** Step 8b: correction path for event details + canonical geography.
+   *  Doubles as the deliberate backfill tool for pre-geo events (each
+   *  assignment is an explicit organizer/admin decision, never a script).
+   *  Ownership enforced twice: the eq() below AND events_update_owner RLS.
+   *  Secretaries edit through their own scoped policy instead -- this
+   *  function stays owner-scoped (getScopedUid keeps admin ?org= working). */
+  updateEvent(
+    eventId: string,
+    data: {
+      event_name?: string;
+      venue?: string;
+      event_date?: string | null;
+      description?: string | null;
+      state_id?: string | null;
+      district_id?: string | null;
+    },
+  ): Promise<ApiResponse<Event>> {
+    return (async () => {
+      const supabase = createClient();
+      const uid = await getScopedUid(supabase);
+      const patch: Record<string, unknown> = {};
+      if (data.event_name !== undefined) patch.event_name = data.event_name;
+      if (data.venue !== undefined) patch.location = data.venue;
+      if (data.event_date !== undefined) patch.event_date = data.event_date;
+      if (data.description !== undefined) patch.description = data.description;
+      if (data.state_id !== undefined) patch.state_id = data.state_id;
+      if (data.district_id !== undefined) patch.district_id = data.district_id;
+      const { data: updated, error } = await supabase
+        .from('events')
+        .update(patch)
+        .eq('id', eventId)
+        .eq('organizer_id', uid)
+        .select('*')
+        .maybeSingle();
+      if (error || !updated)
+        return toApiResponse<Event>({ data: null, error: error ?? { message: 'Event not found' } });
+      return toApiResponse({ data: mapEventRow(updated), error: null });
+    })();
+  },
+
+  /** Shared Phase 3 dataset. RLS includes drafts for the event owner and
+   * admins, while players and unrelated accounts see published rows only. */
+  eventCategories(eventId: string): Promise<ApiResponse<ConfiguredEventCategory[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('event_categories')
+        .select('*')
+        .eq('event_id', eventId)
+        .order('competition_type', { ascending: true })
+        .order('age_label', { ascending: true })
+        .order('gender', { ascending: true })
+        .order('code', { ascending: true });
+      return toApiResponse<ConfiguredEventCategory[]>({
+        data: (data ?? null) as ConfiguredEventCategory[] | null,
+        error,
+      });
+    })();
+  },
+
+  createEventCategory(
+    eventId: string,
+    input: ConfiguredEventCategoryInput,
+  ): Promise<ApiResponse<ConfiguredEventCategory>> {
+    return (async () => {
+      const supabase = createClient();
+      // NOTE: created_by here is body-decorative only -- the Phase 2 trigger
+      // overwrites it with auth.uid() and the RLS pin enforces it.
+      const uid = await getScopedUid(supabase);
+      const { data, error } = await supabase
+        .from('event_categories')
+        .insert({ ...input, event_id: eventId, created_by: uid, is_published: false })
+        .select('*')
+        .single();
+      return toApiResponse<ConfiguredEventCategory>({
+        data: (data ?? null) as ConfiguredEventCategory | null,
+        error,
+      });
+    })();
+  },
+
+  /** Direct edits are valid only until a v2 registration references the
+   * category. The database rejects later rule changes and requires cloning. */
+  updateEventCategory(
+    categoryId: string,
+    input: Partial<ConfiguredEventCategoryInput> & { is_published?: boolean },
+  ): Promise<ApiResponse<ConfiguredEventCategory>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('event_categories')
+        .update(input)
+        .eq('id', categoryId)
+        .select('*')
+        .single();
+      return toApiResponse<ConfiguredEventCategory>({
+        data: (data ?? null) as ConfiguredEventCategory | null,
+        error,
+      });
+    })();
+  },
+
+  cloneEventCategory(
+    categoryId: string,
+    input: ConfiguredEventCategoryInput,
+  ): Promise<ApiResponse<ConfiguredEventCategory>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('clone_event_category', {
+        p_category_id: categoryId,
+        p_code: input.code,
+        p_competition_type: input.competition_type,
+        p_age_label: input.age_label,
+        p_minimum_age: input.minimum_age,
+        p_maximum_age: input.maximum_age,
+        p_gender: input.gender,
+        p_weight_rule_mode: input.weight_rule_mode,
+        p_weight_label: input.weight_label,
+        p_minimum_weight_kg: input.minimum_weight_kg,
+        p_maximum_weight_kg: input.maximum_weight_kg,
+        p_seni_category: input.seni_category,
+      });
+      return toApiResponse<ConfiguredEventCategory>({
+        data: (data ?? null) as ConfiguredEventCategory | null,
+        error,
+      });
+    })();
+  },
+
+  /** Generates the one canonical Pencak draft set in Supabase. The RPC locks
+   * the event, refuses duplicates, and never activates configured registration. */
+  createEventCategoriesFromCurrentPencakDefaults(eventId: string): Promise<ApiResponse<number>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('create_event_categories_from_current_pencak_defaults', {
+        p_event_id: eventId,
+      });
+      return toApiResponse<number>({ data: data ?? null, error });
+    })();
+  },
+
+  activateEventV2(eventId: string): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('activate_event_registration_v2', { p_event_id: eventId });
+      return toApiResponse<void>({ data: undefined, error });
     })();
   },
 
@@ -417,6 +593,31 @@ export const organizerApi = {
    *  real event row to check against), banner uploaded after; a banner
    *  failure logs and the event still succeeds without one, matching
    *  mobile's own forgiving behavior. */
+  /** Canonical master data for the New Event form's State -> District
+   *  dropdowns. states/districts are authenticated-readable reference data;
+   *  this is organizer.api's own read path (no admin import). */
+  geoStates(): Promise<ApiResponse<GeoState[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from('states').select('id, name, code').order('name');
+      if (error) return toApiResponse<GeoState[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoState[], error: null });
+    })();
+  },
+
+  geoDistricts(stateId: string): Promise<ApiResponse<GeoDistrict[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('districts')
+        .select('id, state_id, name, code')
+        .eq('state_id', stateId)
+        .order('name');
+      if (error) return toApiResponse<GeoDistrict[]>({ data: null, error });
+      return toApiResponse({ data: (data ?? []) as GeoDistrict[], error: null });
+    })();
+  },
+
   createEvent(data: {
     event_name: string;
     venue?: string;
@@ -424,10 +625,15 @@ export const organizerApi = {
     description?: string;
     event_date?: string;
     banner_image_file?: File;
+    /** Canonical geography (Step 8a): event location, NOT the organizer's
+     *  home -- any organizer may run an event in any state. FK integrity is
+     *  the only guard, enforced by Postgres, not by constraining choices. */
+    state_id?: string;
+    district_id?: string;
   }): Promise<ApiResponse<Event>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
 
       const { data: inserted, error: insertErr } = await supabase
         .from('events')
@@ -438,6 +644,8 @@ export const organizerApi = {
           description: data.description ?? null,
           organizer_id: uid,
           status: 'active',
+          state_id: data.state_id ?? null,
+          district_id: data.district_id ?? null,
         })
         .select('*')
         .single();
@@ -464,6 +672,7 @@ export const organizerApi = {
     return fetchRegistrationsForEvent(createClient(), eventId);
   },
 
+  // Phase 6 audited review — v2 rows must use RPC, legacy v1 also routed via RPC for audit consistency
   verifyPlayerWeight(
     eventId: string,
     playerId: string,
@@ -489,11 +698,36 @@ export const organizerApi = {
   ): Promise<ApiResponse<void>> {
     return (async () => {
       const supabase = createClient();
-      const { error } = await supabase
-        .from('registrations')
-        .update({ status })
-        .eq('id', registrationId)
-        .eq('event_id', eventId);
+      // pending is not a review decision — keep legacy direct path for that niche case
+      if (status === 'pending') {
+        const { error } = await supabase
+          .from('registrations')
+          .update({ status })
+          .eq('id', registrationId)
+          .eq('event_id', eventId);
+        return toApiResponse<void>({ data: undefined, error });
+      }
+      const { error } = await supabase.rpc('review_registration', {
+        p_registration_id: registrationId,
+        p_decision: status,
+        p_override_reason: null,
+      });
+      return toApiResponse<void>({ data: undefined, error });
+    })();
+  },
+
+  reviewRegistration(
+    registrationId: string,
+    decision: 'approved' | 'rejected' | 'overridden',
+    overrideReason?: string,
+  ): Promise<ApiResponse<void>> {
+    return (async () => {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('review_registration', {
+        p_registration_id: registrationId,
+        p_decision: decision,
+        p_override_reason: overrideReason ?? null,
+      });
       return toApiResponse<void>({ data: undefined, error });
     })();
   },
@@ -501,11 +735,12 @@ export const organizerApi = {
   markAttendance(registrationId: string, eventId: string): Promise<ApiResponse<void>> {
     return (async () => {
       const supabase = createClient();
-      const { error } = await supabase
-        .from('registrations')
-        .update({ attendance: true })
-        .eq('id', registrationId)
-        .eq('event_id', eventId);
+      const { error } = await supabase.rpc('mark_registration_attendance', {
+        p_registration_id: registrationId,
+      });
+      // Fallback for legacy v1 if RPC trigger blocks? RPC handles both, so no fallback needed
+      // Keep eventId param for signature compatibility, not used by RPC
+      void eventId;
       return toApiResponse<void>({ data: undefined, error });
     })();
   },
@@ -540,9 +775,16 @@ export const organizerApi = {
   },
 
   /** create_batch_with_bracket(p_event_id, p_batch_name, p_player_ids,
-   *  p_category, p_referee_id) -- category_label folds into p_category
-   *  (mobile's own documented fix for a client/server key-mismatch bug;
-   *  there is no separate category_label RPC parameter). */
+   *  p_category, p_referee_id, p_bye_method, p_seeds, p_bye_player_ids,
+   *  p_tournament_format, p_grand_final_reset) -- category_label folds into
+   *  p_category (mobile's own documented fix for a client/server key-mismatch
+   *  bug; there is no separate category_label RPC parameter).
+   *
+   *  Bracket-engine options (M3a/M3b/M3c) are all optional: omitted keys fall
+   *  through to the server defaults (single_elimination / random / reset).
+   *  seeds/bye_player_ids are sent only when non-empty; grand_final_reset is
+   *  sent only for double_elimination (the RPC rejects an explicit false for
+   *  other formats, and round_robin locks bye_method to random). */
   createBatch(data: {
     event_id: string;
     batch_name: string;
@@ -550,17 +792,28 @@ export const organizerApi = {
     category_label?: string;
     player_ids: string[];
     referee_id?: string | null;
+    tournament_format?: string;
+    bye_method?: string;
+    seeds?: string[];
+    bye_player_ids?: string[];
+    grand_final_reset?: boolean;
   }): Promise<ApiResponse<unknown>> {
     return (async () => {
       const supabase = createClient();
       const category = data.category ?? data.category_label ?? null;
-      const { data: result, error } = await supabase.rpc('create_batch_with_bracket', {
+      const payload: Record<string, unknown> = {
         p_event_id: data.event_id,
         p_batch_name: data.batch_name,
         p_player_ids: data.player_ids,
         p_category: category,
         p_referee_id: data.referee_id ?? null,
-      });
+      };
+      if (data.tournament_format) payload.p_tournament_format = data.tournament_format;
+      if (data.bye_method) payload.p_bye_method = data.bye_method;
+      if (data.seeds?.length) payload.p_seeds = data.seeds;
+      if (data.bye_player_ids?.length) payload.p_bye_player_ids = data.bye_player_ids;
+      if (data.grand_final_reset !== undefined) payload.p_grand_final_reset = data.grand_final_reset;
+      const { data: result, error } = await supabase.rpc('create_batch_with_bracket', payload);
       if (error) return toApiResponse<unknown>({ data: null, error });
       return toApiResponse({ data: result, error: null });
     })();
@@ -632,17 +885,20 @@ export const organizerApi = {
    *  and defaults to null server-side -- deliberate per the contract's §5/
    *  Decision #7 "ship with nulls for now" call (web has no certificate-
    *  designer form yet), not an oversight. */
-  generateCertificates(batchId: string): Promise<ApiResponse<{ created: number; skipped: number }>> {
+  generateCertificates(batchId: string, opts?: { overwrite?: boolean }): Promise<ApiResponse<{ created: number; skipped: number; updated: number }>> {
     return (async () => {
       if (!batchId) {
         return { success: false, message: 'A batch must be selected to generate certificates' };
       }
       const supabase = createClient();
-      const { data: result, error } = await supabase.rpc('issue_batch_certificates', { p_batch_id: batchId });
-      if (error) return toApiResponse<{ created: number; skipped: number }>({ data: null, error });
+      const { data: result, error } = await supabase.rpc('issue_batch_certificates', { p_batch_id: batchId, p_overwrite: !!opts?.overwrite });
+      if (error) {
+        console.error('[certs] generate failed', { batchId, overwrite: !!opts?.overwrite, message: (error as { message?: string }).message });
+        return toApiResponse<{ created: number; skipped: number; updated: number }>({ data: null, error });
+      }
       return {
         success: true,
-        data: { created: result.created, skipped: result.skipped },
+        data: { created: result.created ?? 0, skipped: result.skipped ?? 0, updated: result.updated ?? 0 },
         message: `${result.created} certificate(s) issued${result.skipped ? `, ${result.skipped} already existed` : ''}`,
       };
     })();
@@ -655,7 +911,10 @@ export const organizerApi = {
       if (batchId) query = query.eq('batch_id', batchId);
 
       const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) return toApiResponse<Record<string, unknown>[]>({ data: null, error });
+      if (error) {
+        console.error('[certs] list failed', { eventId, batchId, message: (error as { message?: string }).message });
+        return toApiResponse<Record<string, unknown>[]>({ data: null, error });
+      }
 
       const rows = data ?? [];
       const playerIds = Array.from(new Set(rows.map((c) => c.player_id).filter(Boolean)));
@@ -768,7 +1027,7 @@ export const organizerApi = {
   }): Promise<ApiResponse<{ list_id: string }>> {
     return (async () => {
       const supabase = createClient();
-      const uid = await getUid(supabase);
+      const uid = await getScopedUid(supabase);
       const { data: inserted, error } = await supabase
         .from('attendance_lists')
         .insert({
@@ -816,24 +1075,61 @@ export const organizerApi = {
     })();
   },
 
-  /** RLS re-derives batch ownership from the match row itself; batchId isn't
-   *  needed by the update, kept on the signature for call-site parity. */
-  startConducting(batchId: string, matchId: string): Promise<ApiResponse<{ match_id: string; status: string }>> {
+  /** rr_standings view (M3b §42: played/wins/losses/points, win = 3 pts,
+   *  decided matches only, points DESC, wins DESC). security_invoker, so the
+   *  caller's own RLS on batch_players/matches governs and no new policies
+   *  were needed; granted to authenticated. The view itself returns [] for
+   *  non-RR batches, and callers additionally gate on the batch format. */
+  batchStandings(batchId: string): Promise<ApiResponse<StandingRow[]>> {
     return (async () => {
       const supabase = createClient();
       const { data, error } = await supabase
-        .from('matches')
-        .update({ status: 'in_progress' })
-        .eq('id', matchId)
-        .select('id, status')
-        .maybeSingle();
-      if (error) return toApiResponse<{ match_id: string; status: string }>({ data: null, error });
+        .from('rr_standings')
+        .select('batch_id, player_id, played, wins, losses, points')
+        .eq('batch_id', batchId)
+        .order('points', { ascending: false })
+        .order('wins', { ascending: false });
+      if (error) return toApiResponse<StandingRow[]>({ data: null, error });
+      return toApiResponse({
+        data: (data ?? []).map((r) => ({
+          batch_id: r.batch_id as string,
+          player_id: r.player_id as string,
+          played: Number(r.played ?? 0),
+          wins: Number(r.wins ?? 0),
+          losses: Number(r.losses ?? 0),
+          points: Number(r.points ?? 0),
+        })),
+        error: null,
+      });
+    })();
+  },
+
+  /** start_match(p_match_id) — the guarded RPC for organizer Start.
+   *
+   *  Was a raw `matches UPDATE status='in_progress'`, which broke when
+   *  20260913110000 revoked matches INSERT/UPDATE from `authenticated`
+   *  (fail-closed allow-list: only SECURITY DEFINER RPCs may write matches).
+   *  The raw path is NOT re-granted — that would reopen the exact hole that
+   *  migration closed. start_match enforces the same ownership model as the
+   *  sibling match RPCs (organizer/associate via owns_batch_of_match, admin;
+   *  referee excluded like force_advance_match/reopen_match) and returns the
+   *  row's updated_at as started_at, which the batch-manage page uses as the
+   *  persisted HH:MM:SS timer base. batchId stays on the signature for
+   *  call-site parity only. */
+  startConducting(batchId: string, matchId: string): Promise<ApiResponse<{ match_id: string; status: string; started_at?: string }>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('start_match', { p_match_id: matchId });
+      if (error) return toApiResponse<{ match_id: string; status: string; started_at?: string }>({ data: null, error });
       if (!data)
-        return toApiResponse<{ match_id: string; status: string }>({
+        return toApiResponse<{ match_id: string; status: string; started_at?: string }>({
           data: null,
           error: { message: 'Match not found or not authorized' },
         });
-      return toApiResponse({ data: { match_id: data.id, status: data.status }, error: null });
+      return toApiResponse({
+        data: { match_id: data.match_id, status: data.status, started_at: data.started_at ?? undefined },
+        error: null,
+      });
     })();
   },
 
@@ -906,6 +1202,7 @@ export const organizerApi = {
     let message = 'Could not generate a certificate link';
     if (data && typeof data.message === 'string') message = data.message;
     else if (error) message = (error as { message?: string }).message || message;
+    console.error('[certs] mint link failed', { certId, message });
     return { success: false, message };
   },
 
@@ -1019,17 +1316,33 @@ export const organizerApi = {
     }
     const playerUuid = resolved.data.id;
 
+    // v2 multi-registration: one player may hold several ACTIVE
+    // registrations in the same event (one per category), so the old
+    // .maybeSingle() throws PGRST116 ("JSON object requested, multiple rows")
+    // for exactly the players v2 was built for. Fetch the set instead, mark
+    // every unmarked one, and report distinctly when everything is already
+    // marked -- the re-scan case the UI must not confuse with a fresh mark.
+    // (Mobile's identical maybeSingle call shares this latent bug; mobile
+    // Phase 4-7 is deferred, flagged here rather than fixed there.)
     const supabase = createClient();
-    const { data: regRow, error: regErr } = await supabase
+    const { data: regRows, error: regErr } = await supabase
       .from('registrations')
-      .select('id')
+      .select('id, attendance')
       .eq('event_id', eventId)
       .eq('player_id', playerUuid)
-      .maybeSingle();
+      .neq('status', 'rejected');
     if (regErr) return toApiResponse<void>({ data: undefined, error: regErr });
-    if (!regRow) return { success: false, message: 'Player not registered for this event' };
+    if (!regRows?.length) return { success: false, message: 'Player not registered for this event' };
 
-    return this.markAttendance(regRow.id, eventId);
+    type RegRow = { id: string; attendance: boolean | null };
+    const unmarked = (regRows as RegRow[]).filter((r) => !r.attendance);
+    if (!unmarked.length) return { success: true, message: 'Attendance already marked' };
+
+    for (const row of unmarked) {
+      const marked = await this.markAttendance(row.id, eventId);
+      if (!marked.success) return marked;
+    }
+    return { success: true, message: 'Attendance marked!' };
   },
 
   /** Records a QR scan against a specific attendance list. The RPC does all
@@ -1060,20 +1373,78 @@ export const organizerApi = {
   },
 
   /** Prior scans for a list, so reopening the scan page shows scans made in
-   *  an earlier session, not just the current one. */
+   *  an earlier session, not just the current one. Phase 4: includes the
+   *  server-stamped actor (who scanned) with the scanner's name embedded
+   *  where profiles RLS permits reading it (admin sees all; organizers see
+   *  only permitted rows, otherwise scanner_name is null and the caller
+   *  falls back to the frozen role label). */
   getAttendanceListScans(
     listId: string,
-  ): Promise<ApiResponse<{ id: string; player_name: string; scanned_at: string }[]>> {
+  ): Promise<
+    ApiResponse<
+      {
+        id: string;
+        player_name: string;
+        scanned_at: string;
+        scanned_by_role: string | null;
+        scanner_name: string | null;
+      }[]
+    >
+  > {
     return (async () => {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('attendance_scans')
-        .select('id, player_name, scanned_at')
+        .select('id, player_name, scanned_at, scanned_by_role, scanner:scanned_by(name)')
         .eq('list_id', listId)
         .order('scanned_at', { ascending: false });
       if (error)
-        return toApiResponse<{ id: string; player_name: string; scanned_at: string }[]>({ data: null, error });
-      return toApiResponse({ data: data ?? [], error: null });
+        return toApiResponse<
+          {
+            id: string;
+            player_name: string;
+            scanned_at: string;
+            scanned_by_role: string | null;
+            scanner_name: string | null;
+          }[]
+        >({ data: null, error });
+      const rows = (data ?? []).map((r) => ({
+        id: r.id as string,
+        player_name: r.player_name as string,
+        scanned_at: r.scanned_at as string,
+        scanned_by_role: (r.scanned_by_role as string | null) ?? null,
+        scanner_name:
+          (Array.isArray(r.scanner) ? r.scanner[0]?.name : (r.scanner as { name?: string } | null)?.name) ??
+          null,
+      }));
+      return toApiResponse({ data: rows, error: null });
+    })();
+  },
+
+  /** Own live grant set (organizer checkbox program v1). Convenience ONLY --
+   *  drives hide/disable of actions the account cannot perform; every write
+   *  is still authorized server-side by RLS + RPC ownership + permission
+   *  gates, so revocation takes effect regardless of what this returns.
+   *  Reads the caller's own rows via organizer_permissions_select_own. A
+   *  failed read (e.g. migrations not yet applied) surfaces as an error and
+   *  callers treat unknown as full-access UI -- fail-open display, never the
+   *  boundary. Works for both organizer and associate roles (per-account
+   *  rows, no inheritance). */
+  myPermissions(): Promise<ApiResponse<OrganizerPermission[]>> {
+    return (async () => {
+      const supabase = createClient();
+      const { data: session } = await supabase.auth.getSession();
+      const uid = session.session?.user?.id;
+      if (!uid) return toApiResponse<OrganizerPermission[]>({ data: null, error: { message: 'Not signed in' } });
+      const { data, error } = await supabase
+        .from('organizer_permissions')
+        .select('permission')
+        .eq('organizer_id', uid);
+      if (error) return toApiResponse<OrganizerPermission[]>({ data: null, error });
+      return toApiResponse({
+        data: (data ?? []).map((r) => r.permission as OrganizerPermission),
+        error: null,
+      });
     })();
   },
 };

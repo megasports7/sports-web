@@ -29,6 +29,7 @@ export default function EditAdminUserPage({ params }: { params: Promise<{ type: 
   const [district, setDistrict] = useState('');
   const [status, setStatus] = useState('active');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -60,9 +61,25 @@ export default function EditAdminUserPage({ params }: { params: Promise<{ type: 
       setError('Name is required.');
       return;
     }
-    if (password && password.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
+    // Password change is strictly opt-in: both fields start blank, and the
+    // backend changes the password for ANY non-empty value it receives --
+    // including a browser-autofilled one. So a half-filled pair is rejected
+    // outright instead of sending one side alone, and a mismatch never
+    // reaches the server. autoComplete="new-password" below is the other
+    // half: it tells password managers not to fill these fields at all.
+    if (password || confirmPassword) {
+      if (!password || !confirmPassword) {
+        setError('To change the password, fill in both password fields.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters.');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -72,7 +89,7 @@ export default function EditAdminUserPage({ params }: { params: Promise<{ type: 
       state: state.trim() || undefined,
       district: district.trim() || undefined,
       status,
-      password: password || undefined,
+      password: password && password === confirmPassword ? password : undefined,
     });
     setSubmitting(false);
 
@@ -165,9 +182,22 @@ export default function EditAdminUserPage({ params }: { params: Promise<{ type: 
           New password (optional)
           <input
             type="password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Leave blank to keep the current password"
+            className="rounded-lg border border-gray-300 px-3 py-2"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm">
+          Confirm new password
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Repeat the new password only if changing it"
             className="rounded-lg border border-gray-300 px-3 py-2"
           />
         </label>

@@ -119,8 +119,62 @@ export async function downloadWeightGroupWorkbook(eventName: string, group: Weig
   URL.revokeObjectURL(objectUrl);
 }
 
+/** Thin secretary registration row: only fields the secretary backend
+ *  exposes (registrations read + roster join). No gender/age/category
+ *  columns exist on this path -- they are omitted, not fabricated. */
+export type SecretaryRegistrationExportRow = {
+  player_id: string;
+  player_name: string;
+  email: string;
+  phone: string;
+  sport: string;
+  status: string;
+  created_at: string;
+};
+
+/** Complete event-scoped secretary export: every row passed in is written
+ *  (callers must pass the FULL dataset, never the filtered view). */
+export async function downloadSecretaryEventRegistrationsWorkbook(
+  eventName: string,
+  rows: SecretaryRegistrationExportRow[],
+): Promise<void> {
+  const XLSX = await import('xlsx');
+  const worksheet = XLSX.utils.json_to_sheet(
+    rows.map((r, index) => ({
+      'S. No.': index + 1,
+      'Player ID': text(r.player_id),
+      Name: text(r.player_name),
+      Email: text(r.email),
+      Phone: text(r.phone),
+      Sport: text(r.sport),
+      Event: eventName,
+      'Registration Status': text(r.status) || 'pending',
+      'Registration Date': dateOnly(r.created_at),
+    })),
+  );
+  worksheet['!cols'] = [
+    { wch: 8 }, { wch: 38 }, { wch: 28 }, { wch: 32 }, { wch: 16 },
+    { wch: 14 }, { wch: 30 }, { wch: 20 }, { wch: 18 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Registrations');
+  const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = `${safeFilePart(eventName)}-registrations.xlsx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 /** Builds one local workbook for all registrations in an event, preserving
- * the separate TANDING and SENI category fields on every row. */
+ *  the separate TANDING and SENI category fields on every row. */
 export async function downloadAllRegistrationsWorkbook(
   eventName: string,
   registrations: Registration[],

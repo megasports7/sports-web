@@ -1,11 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { useOrgParam, withOrg } from '@/lib/auth/orgContext';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
+import type { GeoDistrict, GeoState } from '@/lib/types';
 
 export default function NewEventPage() {
+  // Phase 4: preserve admin-in-organizer ?org= when returning to the list.
+  const orgParam = useOrgParam();
   const router = useRouter();
+  // Convenience-only: the server (events_insert_organizer) authorizes.
+  const { perms } = useOrganizerPermissions();
+  const canCreateEvents = canDo(perms, 'manage_events');
   const [eventName, setEventName] = useState('');
   const [venue, setVenue] = useState('');
   // <input type="date"> instead of the mobile app's free-text date field --
@@ -14,9 +22,38 @@ export default function NewEventPage() {
   const [eventDate, setEventDate] = useState('');
   const [description, setDescription] = useState('');
   const [bannerFile, setBannerFile] = useState<File | undefined>(undefined);
+  // Step 8a: event location from canonical master data -- where the event
+  // HAPPENS, not the organizer's home (cross-state organizing is legitimate,
+  // so every state/district is selectable). Drives secretary scoping
+  // downstream; FK integrity rejects anything outside master data.
+  const [states, setStates] = useState<GeoState[]>([]);
+  const [districts, setDistricts] = useState<GeoDistrict[]>([]);
+  const [stateId, setStateId] = useState('');
+  const [districtId, setDistrictId] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    organizerApi.geoStates().then((res) => {
+      if (res.success && res.data) setStates(res.data);
+      else setError(res.message || 'Could not load states');
+    });
+  }, []);
+
+  // District fetch lives in the select handler (not an effect) per the
+  // repo's react-hooks/set-state-in-effect rule.
+  async function handleStateChange(nextStateId: string) {
+    setStateId(nextStateId);
+    setDistrictId('');
+    if (!nextStateId) {
+      setDistricts([]);
+      return;
+    }
+    const res = await organizerApi.geoDistricts(nextStateId);
+    if (res.success && res.data) setDistricts(res.data);
+    else setError(res.message || 'Could not load districts');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,6 +61,10 @@ export default function NewEventPage() {
 
     if (!eventName.trim()) {
       setValidationError('Event name is required.');
+      return;
+    }
+    if (!stateId || !districtId) {
+      setValidationError('Select the state and district where the event takes place.');
       return;
     }
     setValidationError(null);
@@ -35,11 +76,13 @@ export default function NewEventPage() {
       event_date: eventDate || undefined,
       description: description.trim() || undefined,
       banner_image_file: bannerFile,
+      state_id: stateId,
+      district_id: districtId,
     });
     setSubmitting(false);
 
     if (res.success) {
-      router.push('/organizer/events');
+      router.push(withOrg('/organizer/events', orgParam));
     } else {
       setError(res.message || 'Could not create event');
     }
@@ -69,6 +112,40 @@ export default function NewEventPage() {
           />
         </label>
 
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1 text-sm text-ink">
+            Event state
+            <select
+              value={stateId}
+              onChange={(e) => handleStateChange(e.target.value)}
+              className="rounded-md border border-line px-3 py-2"
+            >
+              <option value="">Select state…</option>
+              {states.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-ink">
+            Event district
+            <select
+              value={districtId}
+              onChange={(e) => setDistrictId(e.target.value)}
+              disabled={!stateId}
+              className="rounded-md border border-line px-3 py-2 disabled:opacity-50"
+            >
+              <option value="">{stateId ? 'Select district…' : 'Select a state first'}</option>
+              {districts.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <label className="flex flex-col gap-1 text-sm text-ink">
           Event date
           <input
@@ -95,10 +172,14 @@ export default function NewEventPage() {
         </label>
 
         {error && <p className="text-corner-red">{error}</p>}
+        {!canCreateEvents && (
+          <p className="text-corner-red">Event creation is disabled for this account — ask an admin for manage_events.</p>
+        )}
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || !canCreateEvents}
+          title={canCreateEvents ? undefined : 'Needs the manage_events permission — ask an admin.'}
           className="rounded-md bg-accent-green px-3 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {submitting ? 'Creating…' : 'Create event'}

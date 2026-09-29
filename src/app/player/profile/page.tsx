@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { playerApi } from '@/lib/api/player.api';
-import type { Player } from '@/lib/types';
+import type { GeoDistrict, GeoState, Player } from '@/lib/types';
 
 const FIELDS: { key: keyof Player; label: string; icon: () => React.ReactElement }[] = [
   { key: 'phone', label: 'Phone', icon: PhoneIcon },
@@ -113,15 +113,23 @@ export default function PlayerProfilePage() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Step 7: canonical geography dropdowns in edit mode (never free text).
+  // Stored values stay canonical NAMES -- resolvers match names/aliases.
+  const [geoStates, setGeoStates] = useState<GeoState[]>([]);
+  const [geoDistricts, setGeoDistricts] = useState<GeoDistrict[]>([]);
+  const [geoStateId, setGeoStateId] = useState('');
 
   function applyProfile(p: Player) {
     setPlayer(p);
     setForm({
       ...Object.fromEntries(FIELDS.map((f) => [f.key, (p[f.key] as string | undefined) ?? ''])),
-      declared_weight_kg: p.declared_weight_kg?.toString() ?? '',
+      dob: p.dob ? p.dob.slice(0, 10) : '',
+      gender: p.gender ?? '',
+      declared_weight_kg: p.declared_weight_kg != null ? String(p.declared_weight_kg) : '',
     });
   }
 
@@ -144,6 +152,35 @@ export default function PlayerProfilePage() {
     window.setTimeout(() => setToast(null), 2200);
   }
 
+  // Entering edit mode preloads master data and pins the state select to
+  // the player's current canonical state (matched by name).
+  async function startEdit() {
+    setEditing(true);
+    const sRes = await playerApi.geoStates();
+    if (sRes.success && sRes.data) {
+      setGeoStates(sRes.data);
+      const current = (form.state ?? player?.state ?? '').trim().toLowerCase();
+      const match = sRes.data.find((s) => s.name.toLowerCase() === current);
+      if (match) {
+        setGeoStateId(match.id);
+        const dRes = await playerApi.geoDistricts(match.id);
+        if (dRes.success && dRes.data) setGeoDistricts(dRes.data);
+      }
+    }
+  }
+
+  async function handleGeoStateChange(nextStateId: string) {
+    setGeoStateId(nextStateId);
+    const name = geoStates.find((s) => s.id === nextStateId)?.name ?? '';
+    setForm((prev) => ({ ...prev, state: name, district: '' }));
+    if (!nextStateId) {
+      setGeoDistricts([]);
+      return;
+    }
+    const res = await playerApi.geoDistricts(nextStateId);
+    if (res.success && res.data) setGeoDistricts(res.data);
+  }
+
   async function handleSave() {
     const declaredWeight = parseWeight(form.declared_weight_kg ?? '');
     if (declaredWeight === undefined) {
@@ -151,10 +188,25 @@ export default function PlayerProfilePage() {
       return;
     }
     setSaving(true);
-    const profileFields = Object.fromEntries(
-      Object.entries(form).filter(([key]) => key !== 'declared_weight_kg'),
-    );
-    const res = await playerApi.updateProfile({ ...profileFields, declared_weight_kg: declaredWeight });
+    // declared_weight_kg: empty → null, otherwise number
+    const payload: Record<string, unknown> = { ...form };
+    const rawWeight = (form.declared_weight_kg ?? '').trim();
+    if (rawWeight === '') payload.declared_weight_kg = null;
+    else {
+      const n = Number(rawWeight);
+      if (!Number.isFinite(n) || n <= 0 || n > 500) {
+        setSaving(false);
+        showToast('Weight must be 0-500 kg');
+        return;
+      }
+      payload.declared_weight_kg = n;
+    }
+    // dob: empty → null, otherwise keep YYYY-MM-DD string
+    if (!form.dob) payload.dob = null;
+    // gender: empty → null
+    if (!form.gender) payload.gender = null;
+
+    const res = await playerApi.updateProfile(payload);
     setSaving(false);
     if (res.success) {
       setEditing(false);
@@ -227,7 +279,7 @@ export default function PlayerProfilePage() {
         <div className="info-head">
           <h2>Personal info</h2>
           {!editing && (
-            <button className="edit-link" onClick={() => setEditing(true)}>
+            <button className="edit-link" onClick={startEdit}>
               <EditIcon />
               Edit
             </button>
@@ -244,6 +296,7 @@ export default function PlayerProfilePage() {
 
         {FIELDS.map((f) => {
           const Icon = f.icon;
+          const isGeo = f.key === 'state' || f.key === 'district';
           return (
             <div className="row" key={f.key}>
               <span className="k">
@@ -251,7 +304,33 @@ export default function PlayerProfilePage() {
                 {f.label}
               </span>
               {editing ? (
-                <input value={form[f.key] ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))} />
+                isGeo ? (
+                  f.key === 'state' ? (
+                    <select value={geoStateId} onChange={(e) => handleGeoStateChange(e.target.value)}>
+                      <option value="">Select</option>
+                      {geoStates.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={form.district ?? ''}
+                      onChange={(e) => setForm((prev) => ({ ...prev, district: e.target.value }))}
+                      disabled={!geoStateId}
+                    >
+                      <option value="">{geoStateId ? 'Select' : 'Select a state first'}</option>
+                      {geoDistricts.map((d) => (
+                        <option key={d.id} value={d.name}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                ) : (
+                  <input value={form[f.key] ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))} />
+                )
               ) : (
                 <span className={`v ${!player[f.key] ? 'muted' : f.key === 'blood_group' ? 'blood' : ''}`}>
                   {(player[f.key] as string) || 'Not set'}
@@ -290,15 +369,75 @@ export default function PlayerProfilePage() {
             <CalendarIcon />
             Date of birth
           </span>
-          <span className="v muted">{player.dob || 'Not set'}</span>
+          {editing ? (
+            <input type="date" value={form.dob ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, dob: e.target.value }))} />
+          ) : (
+            <span className={`v ${!player.dob ? 'muted' : ''}`}>{player.dob ? new Date(player.dob).toLocaleDateString() : 'Not set'}</span>
+          )}
         </div>
         <div className="row">
           <span className="k">
             <GenderIcon />
             Gender
           </span>
-          <span className="v muted">{player.gender || 'Not set'}</span>
+          {editing ? (
+            <select value={form.gender ?? ''} onChange={(e) => setForm((prev) => ({ ...prev, gender: e.target.value }))}>
+              <option value="">Select</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          ) : (
+            <span className={`v ${!player.gender ? 'muted' : ''}`}>{player.gender || 'Not set'}</span>
+          )}
         </div>
+        <div className="row">
+          <span className="k">Declared weight (kg)</span>
+          {editing ? (
+            <input
+              type="number"
+              min="0.01"
+              max="500"
+              step="0.01"
+              value={form.declared_weight_kg ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, declared_weight_kg: e.target.value }))}
+              placeholder="e.g. 42"
+            />
+          ) : (
+            <span className={`v ${player.declared_weight_kg == null ? 'muted' : ''}`}>
+              {player.declared_weight_kg != null ? `${player.declared_weight_kg} kg` : 'Not set'}
+            </span>
+          )}
+        </div>
+        <div className="row">
+          <span className="k">Verified weight</span>
+          <span className={`v ${player.verified_weight_kg == null ? 'muted' : ''}`}>
+            {player.verified_weight_kg != null ? `${player.verified_weight_kg} kg` : 'Not set (organizer verifies)'}
+          </span>
+        </div>
+        <button
+          className="btn-save"
+          style={{ marginTop: 8 }}
+          disabled={verifying || editing || player.declared_weight_kg == null}
+          onClick={async () => {
+            setVerifying(true);
+            const res = await playerApi.demoVerifyWeight();
+            setVerifying(false);
+            if (res.success) {
+              showToast('Weight verified (demo)');
+              refresh();
+            } else {
+              showToast(res.message || 'Verify failed');
+            }
+          }}
+        >
+          {verifying ? 'Verifying…' : 'Verify weight (Demo)'}
+        </button>
+        {editing && (
+          <p style={{ fontSize: 11, color: 'var(--color-muted)', margin: '4px 0 0' }}>
+            Save changes first, then verify — verify copies the saved declared weight.
+          </p>
+        )}
+        <p style={{ fontSize: 11, color: 'var(--color-muted)', margin: '4px 0 0' }}>Demo — worktree QA only. Change age/gender/weight to test your categories.</p>
 
         <div className="weight-verification" aria-label="Weight verification status">
           <div className="weight-verified-row">
@@ -526,6 +665,23 @@ export default function PlayerProfilePage() {
           outline: none;
           font-family: inherit;
           transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .row select {
+          width: 190px;
+          max-width: 55%;
+          text-align: right;
+          border: 1.5px solid var(--color-line);
+          border-radius: 9px;
+          padding: 7px 10px;
+          font-size: 13.5px;
+          font-weight: 600;
+          color: var(--color-ink);
+          outline: none;
+          font-family: inherit;
+          background: var(--color-surface);
+        }
+        .row select:disabled {
+          opacity: 0.5;
         }
         .row input:focus {
           border-color: var(--color-accent-blue);

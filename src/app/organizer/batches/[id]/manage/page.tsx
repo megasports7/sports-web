@@ -2,17 +2,50 @@
 
 import { use, useEffect, useState } from 'react';
 import { organizerApi } from '@/lib/api/organizer.api';
-import type { Batch, BatchPlayer, OrganizerMatch, Referee } from '@/lib/types';
+import { canDo, useOrganizerPermissions } from '@/lib/auth/useOrganizerPermissions';
+import type { Batch, BatchPlayer, OrganizerMatch, Referee, StandingRow } from '@/lib/types';
 
 type Panel = { matchId: string; type: 'record' | 'advance' | 'replace' };
 type ActionMessage = { matchId: string; text: string; error?: boolean };
 
+// bracket_side/bye_type arrive via batchMatches' select('*') but aren't on
+// the shared OrganizerMatch type yet -- kept page-local so this change stays
+// a single hunk (the pending type hunks elsewhere are another task's).
+type MatchWithSide = OrganizerMatch & { bracket_side?: string | null; bye_type?: string | null };
+
+type BracketSide = 'W' | 'L' | 'GF' | 'R';
+
+function sideOf(match: OrganizerMatch): BracketSide {
+  const s = (match as MatchWithSide).bracket_side;
+  return s === 'L' || s === 'GF' || s === 'R' ? s : 'W';
+}
+
+const SIDE_TITLES: Record<BracketSide, string> = {
+  W: 'Winners',
+  L: 'Losers',
+  GF: 'Grand final',
+  R: 'Round',
+};
+
+const BYE_LABELS: Record<string, string> = {
+  knockout: 'Bye',
+  rest: 'Rest',
+  placement: 'Placement',
+};
+
 export default function BatchManagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  // Convenience-only: match RPCs + batches_update_owner authorize server-side.
+  // canConduct gates start/record/reopen/force-advance/replace (manage_matches);
+  // canAssignRef gates referee assignment (manage_batches per Step 0).
+  const { perms } = useOrganizerPermissions();
+  const canConduct = canDo(perms, 'manage_matches');
+  const canAssignRef = canDo(perms, 'manage_batches');
 
   const [batch, setBatch] = useState<Batch | null>(null);
   const [matches, setMatches] = useState<OrganizerMatch[]>([]);
   const [players, setPlayers] = useState<BatchPlayer[]>([]);
+  const [standings, setStandings] = useState<StandingRow[]>([]);
   const [referees, setReferees] = useState<Referee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +64,19 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   const [advanceWinnerId, setAdvanceWinnerId] = useState('');
   const [replaceOldId, setReplaceOldId] = useState('');
   const [replaceNewId, setReplaceNewId] = useState('');
+
+  // Match-timer state. The persisted base is the match row's updated_at at
+  // the scheduled -> in_progress transition (returned by start_match as
+  // started_at; matches has no started_at column and none was added).
+  // timerBase pins the base locally so a post-start refetch can't shift the
+  // display; frozenElapsed preserves the visible time after the organizer
+  // stops the timer by clicking it. pageLoadedAt is only the fallback base
+  // for in-progress rows that carry no updated_at (never updated since
+  // creation) — they count from page load rather than showing a stuck clock.
+  const [timerBase, setTimerBase] = useState<Record<string, number>>({});
+  const [frozenElapsed, setFrozenElapsed] = useState<Record<string, number>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [pageLoadedAt] = useState(() => Date.now());
 
   // Inlined directly in the effect body -- calling ANY locally-defined
   // function that sets state (even after an await) from inside useEffect
@@ -54,6 +100,13 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
       if (m.success && m.data) setMatches(m.data);
       if (p.success && p.data) setPlayers(p.data);
       if (r.success && r.data) setReferees(r.data);
+      // Standings live in rr_standings (view returns [] for non-RR), so only
+      // round-robin batches pay for the extra query.
+      if (b.success && b.data?.tournament_format === 'round_robin') {
+        organizerApi.batchStandings(id).then((s) => {
+          if (s.success && s.data) setStandings(s.data);
+        });
+      }
       setLoading(false);
     });
   }, [id]);
@@ -63,9 +116,48 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     window.setTimeout(() => setToast(null), 2200);
   }
 
+  // One shared 1s tick while any timer is running — not one interval per
+  // match. Stops entirely once every timer is stopped/frozen.
+  const anyTimerRunning = matches.some((m) => m.status === 'in_progress' && frozenElapsed[m.match_id] === undefined);
+  useEffect(() => {
+    if (!anyTimerRunning) return;
+    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [anyTimerRunning]);
+
+  function timerBaseMs(match: OrganizerMatch): number {
+    const local = timerBase[match.match_id];
+    if (local !== undefined) return local;
+    if (match.updated_at) {
+      const parsed = Date.parse(match.updated_at);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    return pageLoadedAt;
+  }
+
+  function elapsedMs(match: OrganizerMatch): number {
+    const frozen = frozenElapsed[match.match_id];
+    if (frozen !== undefined) return frozen;
+    return Math.max(0, nowMs - timerBaseMs(match));
+  }
+
+  function formatHHMMSS(totalMs: number): string {
+    const totalSeconds = Math.floor(totalMs / 1000);
+    const hh = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+    const ss = String(totalSeconds % 60).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  }
+
   async function refreshMatches() {
     const res = await organizerApi.batchMatches(id);
     if (res.success && res.data) setMatches(res.data);
+    // Every record/reopen/advance/replace flows through here, so the RR
+    // table stays fresh without its own refresh plumbing.
+    if (batch?.tournament_format === 'round_robin') {
+      const st = await organizerApi.batchStandings(id);
+      if (st.success && st.data) setStandings(st.data);
+    }
   }
 
   async function refreshBatch() {
@@ -109,11 +201,37 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     const res = await organizerApi.startConducting(id, match.match_id);
     setBusy(false);
     if (res.success) {
+      // Pin the server-returned transition stamp as the timer base so the
+      // display is anchored to persisted match state, not to local click
+      // time; refreshMatches then flips the row to in_progress, which swaps
+      // the Start button for the running timer below.
+      const parsed = res.data?.started_at ? Date.parse(res.data.started_at) : NaN;
+      // nowMs (not Date.now(): the purity lint forbids impure calls in
+      // component scope) — equals the click time here because the tick
+      // updates it every second while any timer runs, and elapsed is 0
+      // at start regardless of small staleness when none runs.
+      const base = Number.isNaN(parsed) ? nowMs : parsed;
+      setTimerBase((prev) => ({ ...prev, [match.match_id]: base }));
+      setFrozenElapsed((prev) => {
+        if (prev[match.match_id] === undefined) return prev;
+        const next = { ...prev };
+        delete next[match.match_id];
+        return next;
+      });
+      setNowMs(base);
       setActionMessage({ matchId: match.match_id, text: 'Match started.' });
       refreshMatches();
     } else {
       setActionMessage({ matchId: match.match_id, text: res.message || 'Could not start match', error: true });
     }
+  }
+
+  // Clicking the running timer stops it locally and preserves the elapsed
+  // time on screen. No server write: match state already transitioned to
+  // in_progress at Start; stopping the display clock is presentation-only.
+  function handleStopTimer(match: OrganizerMatch) {
+    const elapsed = Math.max(0, nowMs - timerBaseMs(match));
+    setFrozenElapsed((prev) => ({ ...prev, [match.match_id]: elapsed }));
   }
 
   async function handleReopen(match: OrganizerMatch) {
@@ -185,6 +303,10 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  function playerName(playerId: string): string {
+    return players.find((p) => p.player_id === playerId)?.name ?? 'Unknown';
+  }
+
   function winnerName(match: OrganizerMatch): string | null {
     if (!match.winner_id) return null;
     if (match.winner_id === match.player1_id) return match.player1_name ?? null;
@@ -196,16 +318,54 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
   if (error) return <p className="text-corner-red">{error}</p>;
   if (!batch) return <p className="text-corner-red">Batch not found.</p>;
 
-  const rounds = Array.from(new Set(matches.map((m) => m.round_number ?? 0))).sort((a, b) => a - b);
   const refereeChanged = selectedRefereeId !== (batch.referee_id ?? '');
+
+  // Bracket-side grouping (Step 9): single-side batches (every SE/RR batch)
+  // render exactly as before; multi-side (DE) batches get Winners / Losers /
+  // Grand-final sections, each with its own round cards.
+  const SIDE_ORDER: BracketSide[] = ['W', 'L', 'GF', 'R'];
+  const sidesInUse = SIDE_ORDER.filter((s) => matches.some((m) => sideOf(m) === s));
+  const singleSide = sidesInUse.length <= 1;
+  const defaultSide: BracketSide = sidesInUse[0] ?? 'W';
+  const roundsFor = (side: BracketSide) =>
+    Array.from(new Set(matches.filter((m) => sideOf(m) === side).map((m) => m.round_number ?? 0))).sort((a, b) => a - b);
+  const bracketSections = (singleSide ? [defaultSide] : sidesInUse).map((side) => ({
+    side,
+    rounds: roundsFor(side),
+  }));
+  function roundTitle(side: BracketSide, round: number): string {
+    if (singleSide) return `Round ${round}`;
+    if (side === 'GF') return 'Grand final';
+    return `${SIDE_TITLES[side]} — Round ${round}`;
+  }
 
   return (
     <div className="page">
       <div className="head">
         <h1>{batch.batch_name}</h1>
         {batch.category && <p>{batch.category}</p>}
+        {batch.tournament_format && batch.tournament_format !== 'single_elimination' && (
+          <p className="format-line">
+            <span className="format-pill">
+              {batch.tournament_format === 'double_elimination' ? 'Double elimination' : 'Round robin'}
+            </span>
+            {batch.bye_method && batch.bye_method !== 'random' && <span className="format-note"> · byes: {batch.bye_method}</span>}
+            {batch.tournament_format === 'double_elimination' && (
+              <span className="format-note"> · reset {batch.grand_final_reset === false ? 'off' : 'on'}</span>
+            )}
+          </p>
+        )}
       </div>
 
+      {(!canConduct || !canAssignRef) && (
+        <p className="text-muted">
+          {!canConduct && !canAssignRef
+            ? 'Match controls and referee assignment are disabled for this account — ask an admin for manage_matches / manage_batches.'
+            : !canConduct
+              ? 'Match controls are disabled for this account — ask an admin for manage_matches.'
+              : 'Referee assignment is disabled for this account — ask an admin for manage_batches.'}
+        </p>
+      )}
       <div className="card">
         <h2>Referee</h2>
         <div className="ref-row">
@@ -217,23 +377,64 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
               </option>
             ))}
           </select>
-          <button className="btn-confirm" onClick={handleConfirmReferee} disabled={!refereeChanged || savingReferee}>
+          <button className="btn-confirm" onClick={handleConfirmReferee} disabled={!refereeChanged || savingReferee || !canAssignRef} title={canAssignRef ? undefined : 'Needs the manage_batches permission — ask an admin.'}>
             {savingReferee ? 'Saving…' : 'Confirm'}
           </button>
         </div>
       </div>
 
+      {batch.tournament_format === 'round_robin' && (
+        <div className="card">
+          <h2>Standings</h2>
+          {standings.length === 0 ? (
+            <p className="text-muted">No decided matches yet — the table fills in as results are recorded.</p>
+          ) : (
+            <table className="standings-table">
+              <thead>
+                <tr>
+                  <th className="num">#</th>
+                  <th>Player</th>
+                  <th className="num">P</th>
+                  <th className="num">W</th>
+                  <th className="num">L</th>
+                  <th className="num">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {standings.map((row, i) => (
+                  <tr key={row.player_id} className={i === 0 && row.played > 0 ? 'leader' : ''}>
+                    <td className="num">{i + 1}</td>
+                    <td>{playerName(row.player_id)}</td>
+                    <td className="num">{row.played}</td>
+                    <td className="num">{row.wins}</td>
+                    <td className="num">{row.losses}</td>
+                    <td className="num pts">{row.points}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="standings-note">Win = 3 pts · decided matches only · level points stay level (no tie-break).</p>
+        </div>
+      )}
+
       {matches.length === 0 ? (
         <p className="text-muted">No matches yet.</p>
       ) : (
-        rounds.map((round) => (
-          <div className="card round-card" key={round}>
-            <p className="round-title">Round {round}</p>
-            <div className="bracket">
-              {matches
-                .filter((m) => (m.round_number ?? 0) === round)
-                .map((match, i) => {
+        bracketSections.map((section) => (
+          <div key={section.side}>
+            {!singleSide && <p className="side-title">{SIDE_TITLES[section.side]}</p>}
+            {section.rounds.map((round) => (
+              <div className="card round-card" key={`${section.side}-${round}`}>
+                <p className="round-title">{roundTitle(section.side, round)}</p>
+                <div className="bracket">
+                  {matches
+                    .filter((m) => sideOf(m) === section.side && (m.round_number ?? 0) === round)
+                    .map((match, i) => {
                   const canStart = match.status === 'scheduled' && !!match.player1_id && !!match.player2_id;
+                  const showTimer = match.status === 'in_progress';
+                  const timerStopped = frozenElapsed[match.match_id] !== undefined;
+                  const timerLabel = showTimer ? formatHHMMSS(elapsedMs(match)) : '';
                   const canRecord = match.status === 'scheduled' || match.status === 'in_progress';
                   const canReopen = match.status === 'completed';
                   const canAdvance = match.status !== 'completed';
@@ -242,6 +443,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                   const w = winnerName(match);
                   const isPanelHere = panel?.matchId === match.match_id;
                   const status = match.status ?? 'scheduled';
+                  const byeType = (match as MatchWithSide).bye_type ?? null;
 
                   return (
                     <div className="match" key={match.match_id}>
@@ -260,26 +462,43 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           {match.player2_name ?? 'TBD'}
                         </span>
                         <span className={`pill pill-${status}`}>{status === 'in_progress' ? 'In progress' : status.charAt(0).toUpperCase() + status.slice(1)}</span>
+                        {byeType && <span className="bye-tag">{BYE_LABELS[byeType] ?? byeType}</span>}
                       </div>
                       {w && <div className="winner-note">Winner: {w}</div>}
 
                       <div className="actions">
                         {canStart && (
-                          <button className="btn-action-primary" onClick={() => handleStart(match)} disabled={busy}>
+                          <button className="btn-action-primary" onClick={() => handleStart(match)} disabled={busy || !canConduct} title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}>
                             Start
                           </button>
                         )}
+                        {showTimer &&
+                          (timerStopped ? (
+                            <span className="btn-action-primary timer timer-stopped" role="timer" aria-label={`Match timer stopped at ${timerLabel}`}>
+                              {timerLabel}
+                            </span>
+                          ) : (
+                            <button
+                              className="btn-action-primary timer"
+                              onClick={() => handleStopTimer(match)}
+                              title="Stop timer"
+                              aria-label={`Match timer running: ${timerLabel}. Activate to stop.`}
+                            >
+                              {timerLabel}
+                            </button>
+                          ))}
                         {canRecord && (
                           <button
                             className="btn-action-primary"
                             onClick={() => (isPanelHere && panel?.type === 'record' ? closePanel() : openPanel(match.match_id, 'record'))}
-                            disabled={busy}
+                            disabled={busy || !canConduct}
+                            title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}
                           >
                             Record result
                           </button>
                         )}
                         {canReopen && (
-                          <button className="chip" onClick={() => handleReopen(match)} disabled={busy}>
+                          <button className="chip" onClick={() => handleReopen(match)} disabled={busy || !canConduct} title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}>
                             Reopen
                           </button>
                         )}
@@ -287,7 +506,8 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           <button
                             className="chip"
                             onClick={() => (isPanelHere && panel?.type === 'advance' ? closePanel() : openPanel(match.match_id, 'advance'))}
-                            disabled={busy}
+                            disabled={busy || !canConduct}
+                            title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}
                           >
                             Force advance
                           </button>
@@ -296,7 +516,8 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                           <button
                             className="chip"
                             onClick={() => (isPanelHere && panel?.type === 'replace' ? closePanel() : openPanel(match.match_id, 'replace'))}
-                            disabled={busy}
+                            disabled={busy || !canConduct}
+                            title={canConduct ? undefined : 'Needs the manage_matches permission — ask an admin.'}
                           >
                             Replace participant
                           </button>
@@ -342,7 +563,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                             />
                           </div>
                           <div className="panel-actions">
-                            <button className="btn-submit" onClick={() => submitRecord(match)} disabled={busy}>
+                            <button className="btn-submit" onClick={() => submitRecord(match)} disabled={busy || !canConduct}>
                               Submit
                             </button>
                             <button className="btn-cancel" onClick={closePanel}>
@@ -373,7 +594,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                             {match.player2_name ?? 'TBD'}
                           </label>
                           <div className="panel-actions">
-                            <button className="btn-submit" onClick={() => submitAdvance(match)} disabled={busy}>
+                            <button className="btn-submit" onClick={() => submitAdvance(match)} disabled={busy || !canConduct}>
                               Confirm
                             </button>
                             <button className="btn-cancel" onClick={closePanel}>
@@ -412,7 +633,7 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                             ))}
                           </select>
                           <div className="panel-actions">
-                            <button className="btn-submit" onClick={() => submitReplace(match)} disabled={busy}>
+                            <button className="btn-submit" onClick={() => submitReplace(match)} disabled={busy || !canConduct}>
                               Confirm
                             </button>
                             <button className="btn-cancel" onClick={closePanel}>
@@ -426,10 +647,12 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
                     </div>
                   );
                 })}
+              </div>
             </div>
-          </div>
-        ))
-      )}
+          ))}
+        </div>
+      ))
+    )}
 
       {toast && <div className="toast">{toast}</div>}
 
@@ -453,6 +676,23 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           color: var(--color-accent-green);
           font-weight: 700;
         }
+        .head .format-line {
+          color: #3a3d45;
+          font-size: 12.5px;
+          font-weight: 600;
+        }
+        .format-pill {
+          display: inline-block;
+          border-radius: 999px;
+          padding: 3px 9px;
+          font-size: 11px;
+          font-weight: 800;
+          color: #3a3d45;
+          background: color-mix(in srgb, var(--color-accent-green) 12%, white);
+        }
+        .format-note {
+          font-weight: 600;
+        }
 
         .card {
           background: var(--color-surface);
@@ -468,6 +708,51 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           text-transform: uppercase;
           color: #3a3d45;
           margin: 0 0 12px;
+        }
+        .standings-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13.5px;
+        }
+        .standings-table th {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+          color: var(--color-muted);
+          text-align: left;
+          padding: 6px 8px;
+          border-bottom: 1.5px solid var(--color-line);
+        }
+        .standings-table td {
+          padding: 9px 8px;
+          border-bottom: 1px solid var(--color-line);
+          color: var(--color-ink);
+        }
+        .standings-table tbody tr:last-child td {
+          border-bottom: none;
+        }
+        .standings-table .num {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+          font-family: var(--font-mono);
+          width: 44px;
+        }
+        .standings-table th:first-child,
+        .standings-table td:first-child {
+          width: 34px;
+        }
+        .standings-table tbody tr.leader td {
+          background: color-mix(in srgb, var(--color-accent-green) 8%, transparent);
+          font-weight: 700;
+        }
+        .standings-table td.pts {
+          font-weight: 800;
+        }
+        .standings-note {
+          margin: 10px 0 0;
+          font-size: 12px;
+          color: var(--color-muted);
         }
 
         .ref-row {
@@ -514,6 +799,23 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
           text-transform: uppercase;
           color: var(--color-muted);
           margin: 0 0 14px;
+        }
+        .side-title {
+          font-size: 15px;
+          font-weight: 800;
+          letter-spacing: -0.2px;
+          color: var(--color-ink);
+          margin: 6px 0 2px;
+        }
+        .bye-tag {
+          display: inline-block;
+          border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 10.5px;
+          font-weight: 800;
+          color: #8a6a10;
+          background: color-mix(in srgb, var(--color-status-pending) 14%, transparent);
+          border: 1px solid color-mix(in srgb, var(--color-status-pending) 32%, transparent);
         }
         .bracket {
           position: relative;
@@ -628,6 +930,23 @@ export default function BatchManagePage({ params }: { params: Promise<{ id: stri
         }
         .btn-action-primary:disabled {
           opacity: 0.6;
+          cursor: default;
+        }
+        .btn-action-primary.timer {
+          display: inline-block;
+          text-align: center;
+          font-family: var(--font-mono);
+          font-variant-numeric: tabular-nums;
+          min-width: 96px;
+          letter-spacing: 0.5px;
+        }
+        button.btn-action-primary.timer:hover {
+          filter: brightness(0.96);
+        }
+        button.btn-action-primary.timer:active {
+          transform: translateY(1px);
+        }
+        span.btn-action-primary.timer-stopped {
           cursor: default;
         }
         .chip {
