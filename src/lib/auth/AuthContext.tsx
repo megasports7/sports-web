@@ -108,9 +108,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // localStorage timestamp (activity anywhere keeps every tab alive).
   useEffect(() => {
     return startIdleWatcher(() => {
-      supabase.auth.signOut();
-      dispatch({ type: 'SIGN_OUT' });
-      router.push('/login');
+      // Some pages are readable without a session (/privacy-policy,
+      // /account-deletion, /login, /signup): an anonymous reader sitting
+      // idle must not be bounced to /login. Only act when a session exists.
+      // Reading it here (rather than from state) also covers sign-out from
+      // another tab: with no session left, there is nothing to do.
+      supabase.auth.getSession().then(({ data }) => {
+        if (!data.session) return;
+        supabase.auth.signOut();
+        dispatch({ type: 'SIGN_OUT' });
+        router.push('/login');
+      });
     });
   }, [supabase, router]);
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { organizerApi } from '@/lib/api/organizer.api';
+import { DeleteAccountSection } from '@/components/account-deletion/DeleteAccountSection';
 import type { Organizer } from '@/lib/types';
 
 const FIELDS: { key: keyof Organizer; label: string }[] = [
@@ -230,6 +231,8 @@ export default function OrganizerProfilePage() {
           View ID card →
         </Link>
       </div>
+
+      <DeleteAccountSection />
 
       {toast && <div className="toast">{toast}</div>}
 

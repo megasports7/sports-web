@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { playerApi } from '@/lib/api/player.api';
+import { DeleteAccountSection } from '@/components/account-deletion/DeleteAccountSection';
 import type { GeoDistrict, GeoState, Player } from '@/lib/types';
 
 const FIELDS: { key: keyof Player; label: string; icon: () => React.ReactElement }[] = [
@@ -439,6 +440,8 @@ export default function PlayerProfilePage() {
           </div>
         )}
       </div>
+
+      <DeleteAccountSection />
 
       {toast && <div className="toast">{toast}</div>}
 

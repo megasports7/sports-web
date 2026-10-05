@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { associateApi } from '@/lib/api/associate.api';
+import { DeleteAccountSection } from '@/components/account-deletion/DeleteAccountSection';
 import type { Associate } from '@/lib/types';
 
 const FIELDS: { key: keyof Associate; label: string }[] = [
@@ -165,6 +166,8 @@ export default function AssociateProfilePage() {
 
         {message && <p className="mt-3 text-sm text-gray-600">{message}</p>}
       </section>
+
+      <DeleteAccountSection />
     </div>
   );
 }

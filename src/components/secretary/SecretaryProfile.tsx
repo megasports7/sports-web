@@ -10,6 +10,10 @@
  */
 import { useEffect, useState } from 'react';
 import { secretaryApi, type SecretaryKind } from '@/lib/api/secretary.api';
+// No DeleteAccountSection here on purpose: secretary accounts can never
+// self-delete (the server refuses until jurisdiction is handed over), so
+// showing the form would only lead to a refusal. Cancel of a scheduled
+// deletion, if one ever exists, stays reachable from the top banner.
 import { SECRETARY_PERMISSIONS, type SecretaryPermission } from '@/lib/types';
 
 const GROUPS: { title: string; keys: SecretaryPermission[] }[] = [

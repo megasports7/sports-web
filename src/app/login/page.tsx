@@ -197,6 +197,16 @@ export default function LoginPage() {
             {(role === 'associate' ||
               role === 'district_secretary' ||
               role === 'state_secretary') && <p className="helper">Use credentials shared by Admin.</p>}
+
+            <p className="helper">
+              <Link href="/privacy-policy" className="helper-link">
+                Privacy Policy
+              </Link>{' '}
+              ·{' '}
+              <Link href="/account-deletion" className="helper-link">
+                Account &amp; data deletion
+              </Link>
+            </p>
           </div>
         </div>
       </div>

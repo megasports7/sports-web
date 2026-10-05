@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { refereeApi } from '@/lib/api/referee.api';
+import { DeleteAccountSection } from '@/components/account-deletion/DeleteAccountSection';
 import type { RefereeProfile } from '@/lib/types';
 
 const FIELDS: { key: keyof RefereeProfile; label: string }[] = [
@@ -193,6 +194,8 @@ export default function RefereeProfilePage() {
           </dl>
         </div>
       </section>
+
+      <DeleteAccountSection />
 
       <style jsx>{`
         .page {
