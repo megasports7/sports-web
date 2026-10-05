@@ -119,9 +119,10 @@ test('describeFailure tells the person to check the password on a wrong password
 });
 
 test('describeFailure gives each blocker its own instruction', () => {
-  assert.match(text({ status: 409, reason: 'owns_events' }), /transfer/i);
-  assert.match(text({ status: 409, reason: 'owns_batches' }), /transfer/i);
-  assert.match(text({ status: 409, reason: 'owns_attendance_lists' }), /transfer/i);
+  assert.match(text({ status: 409, reason: 'owns_events' }), /handover/i);
+  assert.match(text({ status: 409, reason: 'owns_batches' }), /handover/i);
+  assert.match(text({ status: 409, reason: 'owns_attendance_lists' }), /handover/i);
+  assert.match(text({ status: 409, reason: 'owns_events' }), /support/i);
   assert.match(text({ status: 409, reason: 'secretary_handover' }), /administrator/i);
   assert.match(text({ status: 409, reason: 'last_admin' }), /another administrator/i);
   assert.match(text({ status: 409, reason: 'admin_accounts' }), /Administrator accounts/i);

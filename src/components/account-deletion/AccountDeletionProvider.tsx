@@ -1,9 +1,8 @@
 'use client';
 
 /**
- * One shared copy of "is deletion scheduled for the signed-in user?", so the
- * banner at the top of every page and the Delete section on the Profile page
- * always agree, and one's Cancel updates the other.
+ * One shared copy of "is deletion enabled for the signed-in user?", so every
+ * Delete section on the Profile pages agrees.
  *
  * Mounted once in the root layout, inside AuthProvider. It reads
  * public.my_account_deletion() when a user is signed in and nothing otherwise.
@@ -14,7 +13,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useAuth } from '@/lib/auth/AuthContext';
 import {
   accountDeletionApi,
-  type CancelResult,
   type RequestResult,
 } from '@/lib/api/accountDeletion.api';
 import type { DeletionStatus } from '@/lib/accountDeletion/model';
@@ -25,18 +23,16 @@ interface AccountDeletionValue {
   /**
    * True only when the last read for THIS user failed, so the section can
    * offer a retry instead of showing nothing. While true, `status` is null.
-   * The banner ignores this and keeps showing nothing (fail closed).
    */
   loadFailed: boolean;
   /** Re-read the status for the signed-in user (the section's Retry button). */
   refresh: () => Promise<void>;
-  request: (input: { password: string; keepName: boolean }) => Promise<RequestResult>;
-  cancel: () => Promise<CancelResult>;
+  request: (input: { password: string; confirmWord: string; keepName: boolean }) => Promise<RequestResult>;
 }
 
 // A refusal that means "the state on screen is stale": re-read it so the screen
-// catches up (another tab already queued it, or the switch was turned off).
-const STALE_REASONS = new Set(['already_scheduled', 'not_enabled', 'already_deleted']);
+// catches up (the switch was turned off, or the account is already gone).
+const STALE_REASONS = new Set(['not_enabled', 'already_deleted']);
 
 const AccountDeletionContext = createContext<AccountDeletionValue | undefined>(undefined);
 
@@ -86,15 +82,9 @@ export function AccountDeletionProvider({ children }: { children: React.ReactNod
     [refresh],
   );
 
-  const cancel = useCallback<AccountDeletionValue['cancel']>(async () => {
-    const result = await accountDeletionApi.cancel();
-    if (result.ok) await refresh();
-    return result;
-  }, [refresh]);
-
   const value = useMemo(
-    () => ({ status, loadFailed, refresh, request, cancel }),
-    [status, loadFailed, refresh, request, cancel],
+    () => ({ status, loadFailed, refresh, request }),
+    [status, loadFailed, refresh, request],
   );
 
   return <AccountDeletionContext.Provider value={value}>{children}</AccountDeletionContext.Provider>;

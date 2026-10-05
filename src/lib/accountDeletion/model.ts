@@ -7,12 +7,10 @@
  *
  * Everything here fails CLOSED. Anything the server did not say clearly means
  * "do not show the Delete section". The server is the real gate (allow-list
- * lock, blockers, password re-check, grace period); this file only decides what
- * to draw and how to explain a refusal.
+ * lock, blockers, password re-check, typed DELETE word); this file only decides
+ * what to draw and how to explain a refusal. Deletion is instant (owner verdict
+ * 2026-10-05): there is no pending state, no grace period and no cancel.
  */
-
-/** Fixed inside the database function. Shown in copy only; a client cannot change it. */
-export const GRACE_DAYS = 14;
 
 export interface DeletionStatus {
   /** Deletion is switched on for this account (allow-list until go-live). */
@@ -50,9 +48,10 @@ export function parseStatus(raw: unknown): DeletionStatus | null {
 }
 
 /**
- * Which state to draw. A scheduled deletion always shows the pending state,
- * even if `enabled` has since turned false (kill switch pulled after the
- * request was queued): Cancel is never gated, so it must stay reachable.
+ * Which state to draw. Instant deletion (owner verdict 2026-10-05) leaves no
+ * pending state: a deleted account cannot sign in, so `scheduledFor` is always
+ * null in practice. The 'pending' branch stays only so an unexpected shape
+ * still draws something safe instead of the request form.
  */
 export function viewOf(status: DeletionStatus | null): DeletionView {
   if (status === null) return 'hidden';
@@ -91,7 +90,9 @@ interface Described {
 }
 
 const HANDOVER: Described = {
-  text: 'You organise events on MegaSportsX. Contact support to transfer them first, then delete your account.',
+  // Unreachable since the 2026-10-05 verdict (ownership no longer blocks), kept
+  // as a safe fallback so an unexpected reason still points at support.
+  text: 'Your account holds organizer data that needs a handover. Contact support and we’ll handle it.',
   support: true,
 };
 const MISSING_DETAILS: Described = {
@@ -104,7 +105,7 @@ const MISSING_DETAILS: Described = {
 const BY_REASON: Record<string, Described> = {
   wrong_password: { text: 'That password is not correct. Check it and try again.', support: false },
   not_enabled: { text: 'Account deletion isn’t available for this account yet.', support: false },
-  already_scheduled: { text: 'Deletion is already scheduled for this account.', support: false },
+  already_scheduled: { text: 'A deletion request already exists for this account.', support: false },
   already_deleted: { text: 'This account has already been deleted.', support: false },
   suspended: {
     text: 'Your account is suspended, so it can’t be deleted here. Contact support and we’ll handle the request.',

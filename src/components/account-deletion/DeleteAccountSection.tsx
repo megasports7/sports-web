@@ -3,22 +3,19 @@
 /**
  * "Delete account" section for the bottom of every Profile page.
  *
- * Shown only when the server says deletion is enabled for THIS account (or one
- * is already scheduled), so for everyone else it renders nothing. The server
- * refuses anyone else regardless of what is on screen.
+ * Shown only when the server says deletion is enabled for THIS account, so for
+ * everyone else it renders nothing. The server refuses anyone else regardless
+ * of what is on screen.
  *
- * Nothing is deleted when the form is sent: the account stays fully usable for
- * GRACE_DAYS and can be cancelled here or from the banner (contract §4.4).
- *
- * The two states are separate components on purpose: when the view flips
- * (scheduled, cancelled) React discards the form state, so a cancelled
- * deletion can never reopen with an old password or choice still in it. This
- * parent stays mounted and moves keyboard/screen-reader focus to the new
- * state's heading, because the button that was pressed is gone.
+ * Instant deletion (owner verdict 2026-10-05): sending the form deletes the
+ * account at once. There is no pending state, no grace period and no cancel.
+ * The person confirms with their current password plus the typed word DELETE,
+ * and the success state below is local: the account is already gone (signed
+ * out everywhere), so no status re-read could show it.
  */
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState } from 'react';
-import { GRACE_DAYS, formatScheduledDate, viewOf } from '@/lib/accountDeletion/model';
+import { viewOf } from '@/lib/accountDeletion/model';
 import { LEGAL } from '@/lib/legal';
 import { useAccountDeletion } from './AccountDeletionProvider';
 import styles from './AccountDeletion.module.css';
@@ -47,22 +44,29 @@ type HeadingRef = React.RefObject<HTMLHeadingElement | null>;
 export function DeleteAccountSection() {
   const { status, loadFailed, refresh } = useAccountDeletion();
   const view = viewOf(status);
-  // What this person just did here, so the new state can announce itself.
-  const [changed, setChanged] = useState<'scheduled' | 'cancelled' | null>(null);
+  // The account was just deleted through the form below. Local state on
+  // purpose: the session is gone, so a re-read could never show this.
+  const [deleted, setDeleted] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const retryTitleId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
-  // A re-pull (idle timer, another tab) can flip the view without the person
-  // doing anything here. That incoming state must never yank their focus, so
-  // the move below only runs for a flip this section caused itself.
-  const localFlip = useRef(false);
 
   useEffect(() => {
-    if (changed !== null && localFlip.current) {
-      localFlip.current = false;
-      headingRef.current?.focus();
-    }
-  }, [changed, view]);
+    if (deleted) headingRef.current?.focus();
+  }, [deleted]);
+
+  if (deleted) {
+    return (
+      <section className={styles.card} aria-labelledby={retryTitleId}>
+        <h2 id={retryTitleId} ref={headingRef} tabIndex={-1} className={styles.title}>
+          Account deleted
+        </h2>
+        <p role="status" className={styles.ok}>
+          Your account and personal details have been deleted. You have been signed out everywhere.
+        </p>
+      </section>
+    );
+  }
 
   if (status === null) {
     // Still loading, or signed out: nothing to show (fail closed, as before).
@@ -92,30 +96,8 @@ export function DeleteAccountSection() {
       </section>
     );
   }
-  if (view === 'pending' && status.scheduledFor !== null) {
-    return (
-      <PendingCard
-        headingRef={headingRef}
-        scheduledFor={status.scheduledFor}
-        keepName={status.keepName}
-        onCancelled={() => {
-          localFlip.current = true;
-          setChanged('cancelled');
-        }}
-      />
-    );
-  }
   if (view === 'request') {
-    return (
-      <RequestCard
-        headingRef={headingRef}
-        cancelledNotice={changed === 'cancelled'}
-        onScheduled={() => {
-          localFlip.current = true;
-          setChanged('scheduled');
-        }}
-      />
-    );
+    return <RequestCard headingRef={headingRef} onDeleted={() => setDeleted(true)} />;
   }
   return null;
 }
@@ -130,75 +112,20 @@ function SupportLine() {
   );
 }
 
-// ---- pending: a deletion is scheduled ----------------------------------------
-
-function PendingCard({
-  headingRef,
-  scheduledFor,
-  keepName,
-  onCancelled,
-}: {
-  headingRef: HeadingRef;
-  scheduledFor: string;
-  keepName: boolean;
-  onCancelled: () => void;
-}) {
-  const { cancel } = useAccountDeletion();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const titleId = useId();
-
-  async function cancelDeletion() {
-    setBusy(true);
-    setError(null);
-    const result = await cancel();
-    // On success the status has already flipped and this card is gone.
-    setBusy(false);
-    if (result.ok) onCancelled();
-    else setError(result.text);
-  }
-
-  return (
-    <section className={`${styles.card} ${styles.pending}`} aria-labelledby={titleId}>
-      <h2 id={titleId} ref={headingRef} tabIndex={-1} className={styles.title}>
-        Deletion scheduled
-      </h2>
-      <p className={styles.lead}>
-        Your account will be deleted on <strong>{formatScheduledDate(scheduledFor)}</strong>. Until then you can keep
-        using MegaSportsX as usual.
-      </p>
-      <p className={styles.lead}>
-        {keepName
-          ? 'Your name will stay on past results and certificates.'
-          : 'Your name will be replaced with “Deleted user” on past results and certificates.'}
-      </p>
-      <button type="button" className={styles.quiet} onClick={cancelDeletion} disabled={busy}>
-        {busy ? 'Cancelling…' : 'Cancel deletion'}
-      </button>
-      {error && (
-        <p role="alert" className={styles.error}>
-          {error}
-        </p>
-      )}
-    </section>
-  );
-}
-
-// ---- request: nothing scheduled, deletion enabled ------------------------------
+// ---- request: deletion enabled, confirm with password + typed word -----------
 
 function RequestCard({
   headingRef,
-  cancelledNotice,
-  onScheduled,
+  onDeleted,
 }: {
   headingRef: HeadingRef;
-  cancelledNotice: boolean;
-  onScheduled: () => void;
+  onDeleted: () => void;
 }) {
   const { request } = useAccountDeletion();
   const [open, setOpen] = useState(false);
   const [keepName, setKeepName] = useState(false);
   const [password, setPassword] = useState('');
+  const [confirmWord, setConfirmWord] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; support: boolean } | null>(null);
 
@@ -219,21 +146,25 @@ function RequestCard({
     setOpen(false);
     setKeepName(false);
     setPassword('');
+    setConfirmWord('');
     setError(null);
   }
 
+  // The typed word must match exactly; the server re-checks it too.
+  const ready = password.length > 0 && confirmWord === 'DELETE';
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (busy || password.length === 0) return;
+    if (busy || !ready) return;
     setBusy(true);
     setError(null);
-    const result = await request({ password, keepName });
-    // The password never outlives the request, whatever the answer.
+    const result = await request({ password, confirmWord, keepName });
+    // Neither secret outlives the request, whatever the answer.
     setPassword('');
+    setConfirmWord('');
     setBusy(false);
     if (result.ok) {
-      // The status has flipped and this card is gone; the parent moves focus.
-      onScheduled();
+      onDeleted();
       return;
     }
     setError({ text: result.text, support: result.support });
@@ -245,14 +176,9 @@ function RequestCard({
       <h2 id={`${ids}-title`} ref={headingRef} tabIndex={-1} className={styles.title}>
         Delete account
       </h2>
-      {cancelledNotice && (
-        <p role="status" className={styles.ok}>
-          Deletion cancelled. Your account will stay as it is.
-        </p>
-      )}
       <p className={styles.lead}>
-        Delete your account and the personal details linked to it. Nothing is deleted today: you have {GRACE_DAYS} days
-        to change your mind.
+        Delete your account and the personal details linked to it, <strong>right now</strong>. This cannot be
+        undone — there is no waiting period and no cancel.
       </p>
 
       {!open && (
@@ -268,9 +194,9 @@ function RequestCard({
               What happens
             </h3>
             <ul className={styles.steps}>
-              <li>Today nothing is deleted, and you can keep using MegaSportsX.</li>
-              <li>For {GRACE_DAYS} days you can cancel here, or from the banner at the top of every page.</li>
-              <li>After that, your personal details are deleted and you are signed out everywhere.</li>
+              <li>Your personal details are deleted immediately and you are signed out everywhere.</li>
+              <li>Past results, certificates and approved registrations stay, linked to “Deleted user”.</li>
+              <li>This cannot be undone. If you are unsure, choose “Not now”.</li>
             </ul>
           </div>
 
@@ -339,6 +265,28 @@ function RequestCard({
               </span>
             </div>
 
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor={`${ids}-confirm`}>
+                Type DELETE to confirm
+              </label>
+              <input
+                id={`${ids}-confirm`}
+                className={styles.input}
+                type="text"
+                name="confirm-word"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                value={confirmWord}
+                onChange={(e) => setConfirmWord(e.target.value)}
+                readOnly={busy}
+                aria-describedby={`${ids}-confirm-hint`}
+              />
+              <span id={`${ids}-confirm-hint`} className={styles.hint}>
+                Deletion is immediate and cannot be undone.
+              </span>
+            </div>
+
             {error && (
               <p role="alert" className={styles.error}>
                 {error.text}
@@ -347,8 +295,8 @@ function RequestCard({
             )}
 
             <div className={styles.actions}>
-              <button type="submit" className={styles.dangerSolid} disabled={busy || password.length === 0}>
-                {busy ? 'Scheduling…' : 'Schedule deletion'}
+              <button type="submit" className={styles.dangerSolid} disabled={busy || !ready}>
+                {busy ? 'Deleting…' : 'Delete my account now'}
               </button>
               <button type="button" className={styles.quiet} onClick={closePanel} disabled={busy}>
                 Not now

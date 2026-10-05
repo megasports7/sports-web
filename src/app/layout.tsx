@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { AccountDeletionProvider } from "@/components/account-deletion/AccountDeletionProvider";
-import { PendingDeletionBanner } from "@/components/account-deletion/PendingDeletionBanner";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -29,7 +28,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col font-sans">
         <AuthProvider>
           <AccountDeletionProvider>
-            <PendingDeletionBanner />
             {children}
           </AccountDeletionProvider>
         </AuthProvider>
