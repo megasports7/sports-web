@@ -16,6 +16,7 @@
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState } from 'react';
 import { viewOf } from '@/lib/accountDeletion/model';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { LEGAL } from '@/lib/legal';
 import { useAccountDeletion } from './AccountDeletionProvider';
 import styles from './AccountDeletion.module.css';
@@ -122,6 +123,7 @@ function RequestCard({
   onDeleted: () => void;
 }) {
   const { request } = useAccountDeletion();
+  const { signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const [keepName, setKeepName] = useState(false);
   const [password, setPassword] = useState('');
@@ -164,7 +166,13 @@ function RequestCard({
     setConfirmWord('');
     setBusy(false);
     if (result.ok) {
-      onDeleted();
+      // The server already destroyed every session; drop the local one too so
+      // the app stops treating the deleted account as signed in.
+      try {
+        await signOut();
+      } finally {
+        onDeleted();
+      }
       return;
     }
     setError({ text: result.text, support: result.support });
