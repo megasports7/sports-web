@@ -126,6 +126,7 @@ export const config = {
     // extensions, and the two pages that must stay reachable without a
     // session (/login, /signup) -- per the Scope section, there is no other
     // anonymous surface in v1.
-    '/((?!_next/static|_next/image|favicon\\.ico|login|signup|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // /privacy-policy and /account-deletion must be openable without a session (Google Play requirement).
+    '/((?!_next/static|_next/image|favicon\\.ico|login|signup|privacy-policy|account-deletion|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
