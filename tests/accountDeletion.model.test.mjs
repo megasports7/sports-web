@@ -124,11 +124,12 @@ test('describeFailure gives each blocker its own instruction', () => {
   assert.match(text({ status: 409, reason: 'owns_attendance_lists' }), /transfer/i);
   assert.match(text({ status: 409, reason: 'secretary_handover' }), /administrator/i);
   assert.match(text({ status: 409, reason: 'last_admin' }), /another administrator/i);
+  assert.match(text({ status: 409, reason: 'admin_accounts' }), /Administrator accounts/i);
   assert.match(text({ status: 409, reason: 'suspended' }), /suspended/i);
 });
 
 test('describeFailure sends blocked and unexplained failures to support', () => {
-  const reasons = ['owns_events', 'owns_batches', 'owns_attendance_lists', 'secretary_handover', 'suspended', 'no_profile', 'no_email'];
+  const reasons = ['owns_events', 'owns_batches', 'owns_attendance_lists', 'secretary_handover', 'admin_accounts', 'suspended', 'no_profile', 'no_email'];
   for (const reason of reasons) {
     assert.equal(describeFailure({ status: 409, reason }).support, true, reason);
   }

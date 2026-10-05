@@ -121,6 +121,10 @@ const BY_REASON: Record<string, Described> = {
     text: 'You’re the last administrator. Appoint another administrator first, then delete your account.',
     support: false,
   },
+  admin_accounts: {
+    text: 'Administrator accounts can’t be deleted here. Contact support to remove an admin account.',
+    support: true,
+  },
   no_profile: MISSING_DETAILS,
   no_email: MISSING_DETAILS,
 };
