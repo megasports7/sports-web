@@ -15,6 +15,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthContext';
 import type { SecretaryKind } from '@/lib/api/secretary.api';
+import { DistrictSecretaryNavigation } from './DistrictSecretaryNavigation';
+import responsive from './DistrictSecretaryResponsive.module.css';
 
 function NavIcon({ name }: { name: string }) {
   const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
@@ -65,7 +67,10 @@ export function SecretaryShell({
   const title = kind === 'district_secretary' ? 'District Secretary' : 'State Secretary';
 
   return (
-    <div className="shell">
+    <div className={`shell ${kind === 'district_secretary' ? responsive.portal : ''}`}>
+      {kind === 'district_secretary' && (
+        <DistrictSecretaryNavigation links={links} scopeLabel={scopeLabel} />
+      )}
       <aside className="side">
         <div className="brand">
           <span className="mark">

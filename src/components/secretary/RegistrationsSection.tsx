@@ -13,7 +13,7 @@
  * status = status verbatim. No gender/age/category/NSRD columns exist on
  * this backend path -- they are omitted, not fabricated.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { secretaryApi, type SecretaryEvent, type SecretaryKind, type SecretaryRegistration } from '@/lib/api/secretary.api';
 import { EventNav, eventNavItems } from '@/components/secretary/EventNav';
@@ -87,6 +87,16 @@ export function RegistrationsSection({
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const reviewPanel = useRef<HTMLElement>(null);
+  const reviewTrigger = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (kind === 'district_secretary' && selectedId && window.matchMedia('(max-width: 860px)').matches) {
+      reviewPanel.current?.focus({ preventScroll: true });
+      reviewPanel.current?.scrollIntoView({ block: 'start' });
+      const trigger = reviewTrigger.current;
+      return () => { if (trigger?.isConnected) trigger.focus(); };
+    }
+  }, [kind, selectedId]);
   const [drawerMode, setDrawerMode] = useState<'view' | 'confirm-reject' | 'override-reason'>('view');
   const [overrideReason, setOverrideReason] = useState('');
   const [exportState, setExportState] = useState<'idle' | 'preparing' | 'done' | 'error'>('idle');
@@ -179,6 +189,7 @@ export function RegistrationsSection({
   }
 
   function openReview(reg: Enriched) {
+    if (kind === 'district_secretary') reviewTrigger.current = document.activeElement as HTMLElement;
     setSelectedId(reg.id);
     setDrawerMode('view');
     setOverrideReason('');
@@ -432,7 +443,7 @@ export function RegistrationsSection({
         </section>
 
         {selected && (
-          <aside className="drawer" aria-label="Registration review">
+          <aside ref={reviewPanel} tabIndex={-1} className="drawer" aria-label="Registration review">
             <div className="drawer-head">
               <h2>Review registration</h2>
               <button className="drawer-x" onClick={() => setSelectedId(null)} aria-label="Close review">

@@ -94,80 +94,82 @@ export function BatchManageSection({
         {matches.length === 0 ? (
           <p className="text-muted">No matches in this batch.</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Round</th>
-                <th>Match</th>
-                <th>Status</th>
-                <th>Winner</th>
-                {canManageMatches && <th>Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {matches.map((m) => {
-                const id = m.id as string;
-                const status = String(m.status ?? '');
-                const p1 = m.player1_id as string | null;
-                const p2 = m.player2_id as string | null;
-                const p1Name = String(m.player1_name ?? 'TBD');
-                const p2Name = String(m.player2_name ?? 'TBD');
-                const winnerName = (m.winner_name as string | null) ?? null;
-                const loserName = winnerName && p1 && p2 ? (m.winner_id === p1 ? p2Name : p1Name) : null;
-                const busy = matchActing === id;
-                return (
-                  <tr key={id}>
-                    <td>
-                      {m.bracket_side && m.bracket_side !== 'W' ? `${String(m.bracket_side)}·` : ''}R
-                      {String(m.round_number ?? '—')} · M{String(m.match_number ?? '—')}
-                    </td>
-                    <td>
-                      <span className="versus">
-                        {p1Name} <span className="vs">vs</span> {p2Name}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`status status-${status}`}>{status || '—'}</span>
-                    </td>
-                    <td>
-                      {winnerName ? (
-                        <>
-                          <strong className="winner">{winnerName}</strong>
-                          {loserName && (
-                            <>
-                              <br />
-                              <span className="loser">Loser: {loserName}</span>
-                            </>
-                          )}
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    {canManageMatches && (
-                      <td className="actions">
-                        {status === 'scheduled' && p1 && p2 && (
-                          <button disabled={busy} onClick={() => startMatch(id)}>
-                            Start
-                          </button>
-                        )}
-                        {status !== 'completed' && p1 && (
-                          <button disabled={busy} onClick={() => declareWinner(id, p1, p1Name)}>
-                            {p1Name} wins
-                          </button>
-                        )}
-                        {status !== 'completed' && p2 && (
-                          <button disabled={busy} onClick={() => declareWinner(id, p2, p2Name)}>
-                            {p2Name} wins
-                          </button>
+          <div className="table-scroll" role="region" aria-label="Batch matches — scroll horizontally" tabIndex={0}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Round</th>
+                  <th>Match</th>
+                  <th>Status</th>
+                  <th>Winner</th>
+                  {canManageMatches && <th>Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {matches.map((m) => {
+                  const id = m.id as string;
+                  const status = String(m.status ?? '');
+                  const p1 = m.player1_id as string | null;
+                  const p2 = m.player2_id as string | null;
+                  const p1Name = String(m.player1_name ?? 'TBD');
+                  const p2Name = String(m.player2_name ?? 'TBD');
+                  const winnerName = (m.winner_name as string | null) ?? null;
+                  const loserName = winnerName && p1 && p2 ? (m.winner_id === p1 ? p2Name : p1Name) : null;
+                  const busy = matchActing === id;
+                  return (
+                    <tr key={id}>
+                      <td>
+                        {m.bracket_side && m.bracket_side !== 'W' ? `${String(m.bracket_side)}·` : ''}R
+                        {String(m.round_number ?? '—')} · M{String(m.match_number ?? '—')}
+                      </td>
+                      <td>
+                        <span className="versus">
+                          {p1Name} <span className="vs">vs</span> {p2Name}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`status status-${status}`}>{status || '—'}</span>
+                      </td>
+                      <td>
+                        {winnerName ? (
+                          <>
+                            <strong className="winner">{winnerName}</strong>
+                            {loserName && (
+                              <>
+                                <br />
+                                <span className="loser">Loser: {loserName}</span>
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          '—'
                         )}
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      {canManageMatches && (
+                        <td className="actions">
+                          {status === 'scheduled' && p1 && p2 && (
+                            <button disabled={busy} onClick={() => startMatch(id)}>
+                              Start
+                            </button>
+                          )}
+                          {status !== 'completed' && p1 && (
+                            <button disabled={busy} onClick={() => declareWinner(id, p1, p1Name)}>
+                              {p1Name} wins
+                            </button>
+                          )}
+                          {status !== 'completed' && p2 && (
+                            <button disabled={busy} onClick={() => declareWinner(id, p2, p2Name)}>
+                              {p2Name} wins
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
         {!canManageMatches && matches.length > 0 && (
           <p className="text-muted">Match actions need the manage_matches permission — ask an admin.</p>

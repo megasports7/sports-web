@@ -74,26 +74,28 @@ export function CertificatesSection({
           Array.from(groups.entries()).map(([bid, cs]) => (
             <div key={bid} className="batch-group">
               <h3>{batchNameById.get(bid) ?? (bid === 'event' ? 'Event scope' : `Batch ${bid.slice(0, 8)}`)}</h3>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Player</th>
-                    <th>Position</th>
-                    <th>Category</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cs.map((c) => (
-                    <tr key={c.id as string}>
-                      <td>{String(c.player_name ?? '—')}</td>
-                      <td>
-                        <span className={`status status-${String(c.position ?? '')}`}>{String(c.position ?? '—')}</span>
-                      </td>
-                      <td>{String(c.category_name ?? '—')}</td>
+              <div className="table-scroll" role="region" aria-label="Certificates — scroll horizontally" tabIndex={0}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Position</th>
+                      <th>Category</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {cs.map((c) => (
+                      <tr key={c.id as string}>
+                        <td>{String(c.player_name ?? '—')}</td>
+                        <td>
+                          <span className={`status status-${String(c.position ?? '')}`}>{String(c.position ?? '—')}</span>
+                        </td>
+                        <td>{String(c.category_name ?? '—')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ))
         )}
