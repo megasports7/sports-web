@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth/AuthContext';
-import styles from './DistrictSecretaryResponsive.module.css';
+import styles from './SecretaryResponsive.module.css';
 
-/** Mobile-only navigation. The desktop sidebar and auth implementation stay shared. */
-export function DistrictSecretaryNavigation({ links, scopeLabel }: {
+/** Mobile-only navigation shared by the State and District Secretary portals. */
+export function SecretaryResponsiveNavigation({ links, scopeLabel, roleLabel, accentVar }: {
   links: { href: string; label: string; exact: boolean }[];
   scopeLabel: string;
+  roleLabel: string;
+  accentVar: string;
 }) {
   const { signOut } = useAuth();
   const pathname = usePathname();
@@ -35,13 +37,13 @@ export function DistrictSecretaryNavigation({ links, scopeLabel }: {
   }, [open]);
 
   return (
-    <header className={styles.mobileHeader}>
+    <header className={styles.mobileHeader} style={{ '--secretary-accent': accentVar } as React.CSSProperties}>
       <button
         type="button"
         className={styles.menuButton}
-        aria-label="Open district secretary menu"
+        aria-label={`Open ${roleLabel.toLowerCase()} menu`}
         aria-haspopup="dialog"
-        aria-controls="district-secretary-menu"
+        aria-controls="secretary-menu"
         aria-expanded={open}
         onClick={() => { dialog.current?.showModal(); setOpen(true); }}
       >
@@ -50,13 +52,13 @@ export function DistrictSecretaryNavigation({ links, scopeLabel }: {
         </svg>
         Menu
       </button>
-      <span className={styles.mobileTitle}>MegaSportsX<span>District Secretary</span></span>
+      <span className={styles.mobileTitle}>MegaSportsX<span>{roleLabel}</span></span>
       <button type="button" className={styles.logout} onClick={() => signOut()}>Sign out</button>
       <dialog
         ref={dialog}
-        id="district-secretary-menu"
+        id="secretary-menu"
         className={styles.navigationDrawer}
-        aria-labelledby="district-secretary-menu-title"
+        aria-labelledby="secretary-menu-title"
         onClose={() => setOpen(false)}
         onKeyDown={(event) => {
           if (event.key !== 'Tab') return;
@@ -75,10 +77,10 @@ export function DistrictSecretaryNavigation({ links, scopeLabel }: {
       >
         <div className={styles.drawerContent}>
           <div className={styles.drawerHeading}>
-            <h2 id="district-secretary-menu-title">District Secretary</h2>
+            <h2 id="secretary-menu-title">{roleLabel}</h2>
             <button type="button" className={styles.menuButton} onClick={() => dialog.current?.close()} aria-label="Close menu">✕</button>
           </div>
-          <nav aria-label="District Secretary navigation">
+          <nav aria-label={`${roleLabel} navigation`}>
             {links.map((link) => {
               const active = pathname === link.href || (!link.exact && pathname.startsWith(`${link.href}/`));
               return (
