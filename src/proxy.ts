@@ -123,10 +123,13 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Everything except: Next internals, the favicon, static image
-    // extensions, and the two pages that must stay reachable without a
-    // session (/login, /signup) -- per the Scope section, there is no other
-    // anonymous surface in v1.
+    // extensions, the pages that must stay reachable without a session
+    // (/login, /signup, /privacy-policy, /account-deletion), and `prototype`
+    // -- the DESIGN PROTOTYPE review routes for the front-end redesign
+    // (sample data only, no backend calls). REMOVE `prototype` from this
+    // exclusion before any production release: these pages are intentionally
+    // unauthenticated and must never carry real data.
     // /privacy-policy and /account-deletion must be openable without a session (Google Play requirement).
-    '/((?!_next/static|_next/image|favicon\\.ico|login|signup|privacy-policy|account-deletion|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|login|signup|privacy-policy|account-deletion|prototype|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

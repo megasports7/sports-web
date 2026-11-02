@@ -44,3 +44,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Git worktrees — matches sports-mobile-main convention
+.worktrees/
+# Supabase CLI temp
+supabase/.temp/
